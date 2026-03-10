@@ -96,7 +96,7 @@ with st.sidebar:
         "It does NOT constitute financial advice. Crypto markets are highly volatile. "
         "Never invest more than you can afford to lose. Leverage trading carries "
         "extreme risk of liquidation.",
-        icon="!",
+        icon="⚠️",
     )
 
 
