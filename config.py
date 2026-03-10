@@ -29,7 +29,7 @@ ASSET_UNIVERSE = {
 
 # ── API Configuration ─────────────────────────────────────────────────────────
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
-COINGECKO_RATE_LIMIT = 0.7  # seconds between calls (free tier)
+COINGECKO_RATE_LIMIT = float(os.getenv("COINGECKO_RATE_LIMIT", "2.0"))  # seconds between calls (free tier; cloud IPs need ≥2s)
 
 CRYPTOPANIC_API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")

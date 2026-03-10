@@ -19,10 +19,18 @@ log = get_logger(__name__)
 # ── CoinGecko helpers ─────────────────────────────────────────────────────────
 
 def _cg_get(endpoint: str, params: dict | None = None) -> dict | list:
-    """Rate-limited GET against CoinGecko free API."""
+    """Rate-limited GET against CoinGecko free API with retry on 429."""
     url = f"{COINGECKO_BASE}{endpoint}"
     time.sleep(COINGECKO_RATE_LIMIT)
-    resp = requests.get(url, params=params or {}, timeout=15)
+    for attempt in range(3):
+        resp = requests.get(url, params=params or {}, timeout=30)
+        if resp.status_code == 429:
+            wait = COINGECKO_RATE_LIMIT * (attempt + 2)
+            log.warning("CoinGecko 429 rate-limited, waiting %.1fs...", wait)
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp.json()
     resp.raise_for_status()
     return resp.json()
 
@@ -48,7 +56,7 @@ def fetch_market_overview() -> pd.DataFrame:
     return df
 
 
-@retry(max_attempts=2, delay=3.0)
+@retry(max_attempts=1, delay=2.0)
 def fetch_coin_details(coin_id: str) -> dict:
     """Fetch extended coin data (developer stats, community, etc.)."""
     data = _cg_get(f"/coins/{coin_id}", {
