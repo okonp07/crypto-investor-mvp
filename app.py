@@ -416,7 +416,7 @@ if run_btn:
 if "results" in st.session_state:
     display_results(st.session_state["results"], st.session_state.get("risk_level", "moderate"))
 else:
-    st.info("Click **Run Analysis** in the sidebar to begin.", icon="->")
+    st.info("Click **Run Analysis** in the sidebar to begin.", icon="👈")
 
     # Show asset universe
     with st.expander("Asset Universe"):
