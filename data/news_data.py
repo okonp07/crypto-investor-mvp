@@ -6,6 +6,7 @@ Sources (in priority order):
 """
 import re
 import time
+import socket
 from datetime import datetime, timedelta
 import requests
 import feedparser
@@ -35,7 +36,13 @@ def fetch_rss_news(symbol: str, max_items: int = 30) -> list[dict]:
 
     for feed_url in NEWS_RSS_FEEDS:
         try:
-            feed = feedparser.parse(feed_url, request_headers={"User-Agent": "CryptoInvestorMVP/1.0"})
+            # Set a socket timeout to prevent feedparser from hanging
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(15)
+            try:
+                feed = feedparser.parse(feed_url, request_headers={"User-Agent": "CryptoInvestorMVP/1.0"})
+            finally:
+                socket.setdefaulttimeout(old_timeout)
             source = feed.feed.get("title", feed_url)
 
             for entry in feed.entries[:60]:

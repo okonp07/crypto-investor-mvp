@@ -260,6 +260,7 @@ def run_analysis(risk_level: str) -> dict:
 
         except Exception as e:
             log.error("Error analysing %s: %s", symbol, e, exc_info=True)
+            st.toast(f"⚠️ Error on {symbol}: {e}", icon="⚠️")
             continue
 
     progress.progress(100, text="Analysis complete!")
