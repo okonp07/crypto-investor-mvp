@@ -1,5 +1,11 @@
 # Crypto Investor MVP
 
+## Live App
+
+Use the live Streamlit app here:
+
+[Open Crypto Investor MVP](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
+
 A Streamlit-based crypto research dashboard that ranks a curated asset universe using technical analysis, market-structure fundamentals, news sentiment, and machine-learning forecasts.
 
 The app is designed as a decision-support tool, not an execution bot. It produces a ranked market view plus actionable trade-style levels such as suggested entry, stop-loss, take-profit, leverage guidance, and score breakdowns.
@@ -22,6 +28,7 @@ For each tracked asset, the app:
 
 The current frontend is a polished Streamlit dashboard with:
 
+- a live deployment on Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 - a hero-style landing section and upgraded visual theme
 - `Overview`, `Picks`, and `Universe` tabs to reduce scroll length
 - an interactive rankings table with progress bars and mini price-action sparklines
@@ -120,6 +127,10 @@ crypto-investor-mvp/
 
 ## Running Locally
 
+Live app:
+
+[https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
@@ -135,6 +146,10 @@ Optional environment variables:
 ## Streamlit Cloud Deployment
 
 This project is suitable for Streamlit Community Cloud deployment.
+
+Current deployed app:
+
+[Open the deployed Streamlit app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
 Typical setup:
 
@@ -165,6 +180,7 @@ Notes:
 - added market-data and RSS caching to reduce repeated network cost
 - repaired the local XGBoost runtime and graceful fallback path
 - redesigned the Streamlit UI with tabs, sparklines, watchlist, and allocation guidance
+- deployed the app to Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
 ## Tech Stack
 
@@ -182,3 +198,7 @@ Notes:
 - `scikit-learn`
 - `statsmodels`
 
+## Quick Access
+
+- Live app: [https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
+- PRD for the latest upgrade: [PRD_UI_AND_RELIABILITY_UPDATE.md](/Users/researchanddevelopment2/Documents/Zindi/crypto-investor-mvp/PRD_UI_AND_RELIABILITY_UPDATE.md)

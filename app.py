@@ -428,10 +428,10 @@ with st.sidebar:
 
     st.divider()
     st.warning(
-        "**Disclaimer:** This tool is for educational and research purposes only. "
-        "It does NOT constitute financial advice. Crypto markets are highly volatile. "
-        "Never invest more than you can afford to lose. Leverage trading carries "
-        "extreme risk of liquidation.",
+        "**Disclaimer:** All investments carry risk, including the possible loss of principal. "
+        "Use of this tool is at your own risk. The builders and contributors are not liable "
+        "for any losses, damages, or decisions made based on its outputs. Crypto markets are "
+        "highly volatile, and leverage can lead to rapid liquidation.",
         icon="⚠️",
     )
 
@@ -602,6 +602,38 @@ def render_summary_tiles(all_results: dict, top_picks: list[dict], risk_level: s
             """,
             unsafe_allow_html=True,
         )
+
+
+def render_health_check(all_results: dict):
+    """Render a compact pipeline health summary."""
+    ml_statuses = [
+        result.get("ml_forecast", {}).get("direction", {}).get("model_status", "unknown")
+        for result in all_results.values()
+    ]
+    ml_ok = sum(status == "ok" for status in ml_statuses)
+    total_assets = len(all_results)
+    sentiment_articles = sum(
+        result.get("sentiment", {}).get("article_count", 0) for result in all_results.values()
+    )
+    ohlcv_ready = sum(0 if result.get("ohlcv", pd.DataFrame()).empty else 1 for result in all_results.values())
+    overall_state = "Healthy" if ml_ok == total_assets and ohlcv_ready == total_assets else "Degraded"
+    state_tone = "bullish" if overall_state == "Healthy" else "bearish"
+
+    st.markdown('<div class="section-kicker">System Health</div>', unsafe_allow_html=True)
+    st.markdown(
+        f"### Pipeline status {tone_badge(overall_state.upper(), state_tone)}",
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Assets Analysed", f"{total_assets}")
+    c2.metric("ML Active", f"{ml_ok}/{total_assets}")
+    c3.metric("Price Feeds OK", f"{ohlcv_ready}/{total_assets}")
+    c4.metric("News Items", f"{sentiment_articles}")
+
+    if ml_ok != total_assets:
+        st.error("ML classifier fallback detected for one or more assets. Check the XGBoost runtime.")
+    else:
+        st.success("ML classifier is active across the analysed asset set.")
 
 
 def render_pick_banner(rank_num: int, symbol: str, trend: str, final_score: float, reasoning: str):
@@ -1064,6 +1096,7 @@ def display_results(all_results: dict, risk_level: str):
 
     with overview_tab:
         render_summary_tiles(all_results, top_picks, risk_level, regime)
+        render_health_check(all_results)
         st.markdown('<div class="section-kicker">Live Rankings</div>', unsafe_allow_html=True)
         st.header("Full Asset Rankings")
         newly_selected_symbol = render_rankings_table(all_results)
