@@ -1,125 +1,184 @@
 # Crypto Investor MVP
 
-A quant-assisted crypto investment decision-support tool that combines technical analysis, fundamental scoring, NLP sentiment analysis, and ML time-series forecasting to identify and rank promising crypto assets.
+A Streamlit-based crypto research dashboard that ranks a curated asset universe using technical analysis, market-structure fundamentals, news sentiment, and machine-learning forecasts.
 
-**This is NOT financial advice. Use at your own risk.**
+The app is designed as a decision-support tool, not an execution bot. It produces a ranked market view plus actionable trade-style levels such as suggested entry, stop-loss, take-profit, leverage guidance, and score breakdowns.
 
----
+This is not financial advice. Use at your own risk.
 
-## Quick Start
+## What The App Does
 
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+For each tracked asset, the app:
 
-# 2. (Optional) Configure API keys for enhanced data
-cp .env.example .env
-# Edit .env with your CryptoPanic / GitHub tokens
+- pulls price history from Yahoo Finance
+- pulls market metadata from CoinPaprika
+- scans crypto news sources for sentiment
+- measures developer activity from GitHub when available
+- computes four pillar scores: technical, fundamental, sentiment, and ML
+- combines those scores into a final ranking
+- suggests entry price, stop-loss, take-profit, leverage, and risk/reward
 
-# 3. Run the app
-streamlit run app.py
+## Current Product State
+
+The current frontend is a polished Streamlit dashboard with:
+
+- a hero-style landing section and upgraded visual theme
+- `Overview`, `Picks`, and `Universe` tabs to reduce scroll length
+- an interactive rankings table with progress bars and mini price-action sparklines
+- persistent asset selection across tabs
+- a one-click watchlist in the sidebar
+- a score-weighted suggested allocation panel for the current top picks
+- detailed top-pick cards with chart, sentiment, rationale, and risk controls
+
+## Data Sources
+
+- `Yahoo Finance` via `yfinance`: OHLCV history
+- `CoinPaprika`: market metadata such as price, market cap, rank, supply, and volume
+- `RSS feeds` + optional `CryptoPanic`: sentiment/news input
+- `GitHub API`: developer activity proxy
+
+## Scoring Model
+
+The app scores each asset across four pillars:
+
+| Pillar | What It Uses | Score Range |
+| --- | --- | --- |
+| Technical | RSI, MACD, EMA/SMA cross, Bollinger Bands, ADX, Stochastic, OBV, ATR, momentum, support/resistance | 0-100 |
+| Fundamental | Market cap rank, volume/market-cap ratio, supply dynamics, price momentum, relative strength, developer activity, liquidity | 0-100 |
+| Sentiment | VADER + TextBlob over recent crypto news | 0-100 |
+| ML Forecast | XGBoost direction classifier + exponential smoothing forecast | 0-100 |
+
+Default combined score:
+
+```text
+Final Score = 0.30 * Technical
+            + 0.20 * Fundamental
+            + 0.20 * Sentiment
+            + 0.30 * ML
 ```
 
-## Architecture
+Risk profiles reweight those components and also affect leverage, stop-loss width, and target sizing.
 
-```
-crypto_investor/
-├── app.py                    # Streamlit frontend
-├── config.py                 # All configuration & tunable parameters
-├── data/
-│   ├── market_data.py        # CoinGecko + Yahoo Finance data ingestion
-│   └── news_data.py          # RSS feeds + CryptoPanic news collection
-├── analysis/
-│   ├── technical.py          # 11 technical indicators → weighted score
-│   ├── fundamental.py        # 8 fundamental factors → weighted score
-│   ├── sentiment.py          # VADER + TextBlob NLP → sentiment score
-│   └── ml_forecast.py        # XGBoost direction + Exp. Smoothing forecast
-├── scoring/
-│   └── engine.py             # Combined ranking, reasoning, market regime
-├── strategy/
-│   ├── entry_exit.py         # Entry / exit / stop-loss price computation
-│   └── risk.py               # Risk tolerance → leverage mapping
-├── utils/
-│   └── helpers.py            # Logging, retry, normalisation utilities
-├── requirements.txt
-├── .env.example
-└── README.md
-```
+## Trade-Level Outputs
 
-## How Picks Are Generated
+For each strong candidate, the app surfaces:
 
-### 1. Data Collection
-- **OHLCV prices** from Yahoo Finance (180 days daily)
-- **Market metadata** from CoinGecko (market cap, volume, supply)
-- **News articles** from RSS feeds (CoinDesk, CoinTelegraph, Decrypt, Bitcoin Magazine)
-- **Developer activity** from GitHub API (stars, commits, forks)
+- `Entry price`
+- `Stop-loss`
+- `Take-profit / exit price`
+- `Risk/reward ratio`
+- `Expected return`
+- `Suggested leverage`
 
-### 2. Four Analysis Pillars
-
-| Pillar | Method | Score Range |
-|--------|--------|-------------|
-| **Technical** | RSI, MACD, EMA/SMA cross, Bollinger, ADX, Stochastic, OBV, ATR, momentum, support/resistance | 0-100 |
-| **Fundamental** | Market cap rank, volume/mcap ratio, supply dynamics, price momentum, relative strength vs BTC, developer activity, liquidity | 0-100 |
-| **Sentiment** | VADER + TextBlob on recent news headlines, trend detection, positive/negative classification | 0-100 |
-| **ML Forecast** | XGBoost direction classifier (bullish/bearish/neutral) + Holt-Winters exponential smoothing price forecast | 0-100 |
-
-### 3. Combined Scoring
-```
-Final Score = 0.30 * Technical + 0.20 * Fundamental + 0.20 * Sentiment + 0.30 * ML
-```
-Weights are adjusted by risk tolerance (e.g., conservative boosts fundamentals, aggressive boosts sentiment/ML).
-
-### 4. Entry / Exit / Stop-Loss
-- **Entry**: Pullback toward support and pivot, depth varies by risk level
-- **Exit**: Blend of resistance level, ATR-based target, and ML forecast
-- **Stop-loss**: ATR-multiple below entry, floored at support
-
-### 5. Leverage
-- Conservative: 1x (no leverage)
-- Moderate: 2-3x
-- Aggressive: up to 5x
-- Adjusted down for high volatility and low model confidence
+These are computed from support/resistance, ATR-style logic, forecast levels, confidence, and user-selected risk tolerance.
 
 ## Asset Universe
 
-15 major crypto assets: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOT, LINK, MATIC, LTC, UNI, NEAR, APT, SUI
+The default universe includes:
 
-## Configuration
+- BTC
+- ETH
+- SOL
+- BNB
+- XRP
+- ADA
+- AVAX
+- DOT
+- LINK
+- MATIC
+- LTC
+- UNI
+- NEAR
+- APT
+- SUI
 
-All parameters are in `config.py`:
-- Asset universe
-- Technical indicator periods
-- Scoring weights
-- Risk profiles (leverage, stop-loss, target multipliers)
-- API endpoints and rate limits
+## Project Structure
+
+```text
+crypto-investor-mvp/
+├── app.py                    # Streamlit UI and app flow
+├── config.py                 # Asset universe, weights, risk profiles, API settings
+├── data/
+│   ├── market_data.py        # CoinPaprika + Yahoo Finance ingestion, caching
+│   └── news_data.py          # RSS + CryptoPanic ingestion, dedupe, caching
+├── analysis/
+│   ├── technical.py          # Technical indicators and technical score
+│   ├── fundamental.py        # Fundamental / market structure score
+│   ├── sentiment.py          # News sentiment scoring
+│   └── ml_forecast.py        # XGBoost direction + price forecast
+├── scoring/
+│   └── engine.py             # Final score combination, ranking, reasoning
+├── strategy/
+│   ├── entry_exit.py         # Entry, exit, stop-loss computation
+│   └── risk.py               # Leverage and risk profile logic
+├── utils/
+│   └── helpers.py            # Logging, retries, normalization helpers
+├── requirements.txt
+├── ARTICLE.md
+└── README.md
+```
+
+## Running Locally
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Optional environment variables:
+
+- `CRYPTOPANIC_API_KEY`
+- `GITHUB_TOKEN`
+- `COINPAPRIKA_RATE_LIMIT`
+- `LOG_LEVEL`
+
+## Streamlit Cloud Deployment
+
+This project is suitable for Streamlit Community Cloud deployment.
+
+Typical setup:
+
+1. Push the repo to GitHub.
+2. In Streamlit Community Cloud, create a new app from this repo.
+3. Set the main file path to `app.py`.
+4. Add any needed secrets such as `CRYPTOPANIC_API_KEY` and `GITHUB_TOKEN`.
+5. Deploy.
+
+Notes:
+
+- The app is designed to run from Streamlit, not as a static site.
+- First load may take longer because it fetches live data.
+- In-process caching helps repeated reruns within the same session.
 
 ## Limitations
 
-- **Not real-time**: Runs on-demand, not streaming
-- **Sentiment coverage**: RSS feeds may not capture all relevant news; CryptoPanic key improves coverage
-- **ML model**: XGBoost with simple features; no deep learning (intentional for MVP transparency)
-- **No backtesting**: Forward-looking only (backtesting module is a future extension)
-- **API rate limits**: CoinGecko free tier limits ~10-30 calls/min; full analysis takes 2-5 minutes
-- **No order execution**: Analysis only, no trading integration
+- Live external APIs can still slow down or fail transiently
+- Sentiment coverage is limited to configured news sources unless expanded
+- ML is intentionally lightweight and transparent, not institutional-grade forecasting
+- There is no brokerage integration or automatic trade execution
+- There is no historical backtesting module yet
 
-## Future Improvements
+## Recent Improvements
 
-- Backtesting engine with historical signal evaluation
-- Portfolio allocation optimisation (Markowitz / risk parity)
-- Signal history tracking and performance monitoring
-- FinBERT or domain-specific transformer for sentiment
-- LSTM / Temporal Fusion Transformer for forecasting
-- WebSocket streaming for real-time updates
-- Cron-scheduled periodic refresh
-- Downloadable PDF report
-- On-chain data integration (Dune Analytics, Glassnode free tier)
+- migrated market metadata from CoinGecko to CoinPaprika
+- fixed broken Yahoo Finance tickers for several assets
+- added market-data and RSS caching to reduce repeated network cost
+- repaired the local XGBoost runtime and graceful fallback path
+- redesigned the Streamlit UI with tabs, sparklines, watchlist, and allocation guidance
 
 ## Tech Stack
 
-All open-source:
-- **Frontend**: Streamlit + Plotly
-- **Data**: yfinance, CoinGecko API, feedparser
-- **Technical Analysis**: ta (Python)
-- **NLP**: VADER, TextBlob
-- **ML**: XGBoost, scikit-learn, statsmodels
-- **Language**: Python 3.10+
+- `Streamlit`
+- `Plotly`
+- `pandas`
+- `numpy`
+- `yfinance`
+- `CoinPaprika API`
+- `feedparser`
+- `BeautifulSoup`
+- `VADER`
+- `TextBlob`
+- `XGBoost`
+- `scikit-learn`
+- `statsmodels`
+

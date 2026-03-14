@@ -8,28 +8,28 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Asset Universe ────────────────────────────────────────────────────────────
-# CoinGecko ID → metadata used across modules
+# Stable internal asset ID → metadata used across modules
 ASSET_UNIVERSE = {
-    "bitcoin":        {"symbol": "BTC",   "yf": "BTC-USD",   "github": "bitcoin/bitcoin"},
-    "ethereum":       {"symbol": "ETH",   "yf": "ETH-USD",   "github": "ethereum/go-ethereum"},
-    "solana":         {"symbol": "SOL",   "yf": "SOL-USD",   "github": "solana-labs/solana"},
-    "binancecoin":    {"symbol": "BNB",   "yf": "BNB-USD",   "github": None},
-    "ripple":         {"symbol": "XRP",   "yf": "XRP-USD",   "github": "ripple/rippled"},
-    "cardano":        {"symbol": "ADA",   "yf": "ADA-USD",   "github": "input-output-hk/cardano-node"},
-    "avalanche-2":    {"symbol": "AVAX",  "yf": "AVAX-USD",  "github": "ava-labs/avalanchego"},
-    "polkadot":       {"symbol": "DOT",   "yf": "DOT-USD",   "github": "paritytech/polkadot-sdk"},
-    "chainlink":      {"symbol": "LINK",  "yf": "LINK-USD",  "github": "smartcontractkit/chainlink"},
-    "matic-network":  {"symbol": "MATIC", "yf": "MATIC-USD",  "github": "maticnetwork/bor"},
-    "litecoin":       {"symbol": "LTC",   "yf": "LTC-USD",   "github": "litecoin-project/litecoin"},
-    "uniswap":        {"symbol": "UNI",   "yf": "UNI-USD",   "github": "Uniswap/v3-core"},
-    "near":           {"symbol": "NEAR",  "yf": "NEAR-USD",  "github": "near/nearcore"},
-    "aptos":          {"symbol": "APT",   "yf": "APT-USD",   "github": "aptos-labs/aptos-core"},
-    "sui":            {"symbol": "SUI",   "yf": "SUI-USD",   "github": None},
+    "bitcoin":        {"symbol": "BTC",   "yf": "BTC-USD",   "paprika": "btc-bitcoin",       "github": "bitcoin/bitcoin"},
+    "ethereum":       {"symbol": "ETH",   "yf": "ETH-USD",   "paprika": "eth-ethereum",      "github": "ethereum/go-ethereum"},
+    "solana":         {"symbol": "SOL",   "yf": "SOL-USD",   "paprika": "sol-solana",        "github": "solana-labs/solana"},
+    "binancecoin":    {"symbol": "BNB",   "yf": "BNB-USD",   "paprika": "bnb-binance-coin",  "github": None},
+    "ripple":         {"symbol": "XRP",   "yf": "XRP-USD",   "paprika": "xrp-xrp",           "github": "ripple/rippled"},
+    "cardano":        {"symbol": "ADA",   "yf": "ADA-USD",   "paprika": "ada-cardano",       "github": "input-output-hk/cardano-node"},
+    "avalanche-2":    {"symbol": "AVAX",  "yf": "AVAX-USD",  "paprika": "avax-avalanche",    "github": "ava-labs/avalanchego"},
+    "polkadot":       {"symbol": "DOT",   "yf": "DOT-USD",   "paprika": "dot-polkadot",      "github": "paritytech/polkadot-sdk"},
+    "chainlink":      {"symbol": "LINK",  "yf": "LINK-USD",  "paprika": "link-chainlink",    "github": "smartcontractkit/chainlink"},
+    "matic-network":  {"symbol": "MATIC", "yf": "POL28321-USD", "paprika": "matic-polygon",     "github": "maticnetwork/bor"},
+    "litecoin":       {"symbol": "LTC",   "yf": "LTC-USD",   "paprika": "ltc-litecoin",      "github": "litecoin-project/litecoin"},
+    "uniswap":        {"symbol": "UNI",   "yf": "UNI7083-USD",   "paprika": "uni-uniswap",       "github": "Uniswap/v3-core"},
+    "near":           {"symbol": "NEAR",  "yf": "NEAR-USD",  "paprika": "near-near-protocol","github": "near/nearcore"},
+    "aptos":          {"symbol": "APT",   "yf": "APT21794-USD",   "paprika": "apt-aptos",         "github": "aptos-labs/aptos-core"},
+    "sui":            {"symbol": "SUI",   "yf": "SUI20947-USD",   "paprika": "sui-sui",           "github": None},
 }
 
 # ── API Configuration ─────────────────────────────────────────────────────────
-COINGECKO_BASE = "https://api.coingecko.com/api/v3"
-COINGECKO_RATE_LIMIT = float(os.getenv("COINGECKO_RATE_LIMIT", "2.0"))  # seconds between calls (free tier; cloud IPs need ≥2s)
+COINPAPRIKA_BASE = "https://api.coinpaprika.com/v1"
+COINPAPRIKA_RATE_LIMIT = float(os.getenv("COINPAPRIKA_RATE_LIMIT", "0.2"))
 
 CRYPTOPANIC_API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")

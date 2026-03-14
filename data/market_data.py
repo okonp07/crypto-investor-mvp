@@ -1,14 +1,16 @@
 """
 Data ingestion layer.
-- CoinGecko: market overview, coin details
+- CoinPaprika: market overview, coin details
 - Yahoo Finance (via yfinance): OHLCV historical data
 """
 import time
+import copy
+import functools
 import requests
 import pandas as pd
 import yfinance as yf
 from config import (
-    ASSET_UNIVERSE, COINGECKO_BASE, COINGECKO_RATE_LIMIT,
+    ASSET_UNIVERSE, COINPAPRIKA_BASE, COINPAPRIKA_RATE_LIMIT,
     OHLC_HISTORY_DAYS, GITHUB_TOKEN,
 )
 from utils.helpers import get_logger, retry
@@ -16,17 +18,17 @@ from utils.helpers import get_logger, retry
 log = get_logger(__name__)
 
 
-# ── CoinGecko helpers ─────────────────────────────────────────────────────────
+# ── CoinPaprika helpers ───────────────────────────────────────────────────────
 
-def _cg_get(endpoint: str, params: dict | None = None) -> dict | list:
-    """Rate-limited GET against CoinGecko free API with retry on 429."""
-    url = f"{COINGECKO_BASE}{endpoint}"
-    time.sleep(COINGECKO_RATE_LIMIT)
+def _cp_get(endpoint: str, params: dict | None = None) -> dict | list:
+    """Rate-limited GET against CoinPaprika with retry on 429 / 5xx."""
+    url = f"{COINPAPRIKA_BASE}{endpoint}"
+    time.sleep(COINPAPRIKA_RATE_LIMIT)
     for attempt in range(3):
         resp = requests.get(url, params=params or {}, timeout=30)
-        if resp.status_code == 429:
-            wait = COINGECKO_RATE_LIMIT * (attempt + 2)
-            log.warning("CoinGecko 429 rate-limited, waiting %.1fs...", wait)
+        if resp.status_code == 429 or resp.status_code >= 500:
+            wait = COINPAPRIKA_RATE_LIMIT * (attempt + 2)
+            log.warning("CoinPaprika %s retry, waiting %.1fs...", resp.status_code, wait)
             time.sleep(wait)
             continue
         resp.raise_for_status()
@@ -36,37 +38,63 @@ def _cg_get(endpoint: str, params: dict | None = None) -> dict | list:
 
 
 @retry(max_attempts=3, delay=2.0)
-def fetch_market_overview() -> pd.DataFrame:
+def _fetch_market_overview_cached() -> pd.DataFrame:
     """
     Fetch current market snapshot for every asset in the universe.
-    Returns one row per asset with price, market cap, volume, supply, etc.
+    Returns one row per asset with the same columns the scoring layer expects.
     """
-    ids = ",".join(ASSET_UNIVERSE.keys())
-    data = _cg_get("/coins/markets", {
-        "vs_currency": "usd",
-        "ids": ids,
-        "order": "market_cap_desc",
-        "per_page": 250,
-        "page": 1,
-        "sparkline": "false",
-        "price_change_percentage": "1h,24h,7d,30d",
-    })
-    df = pd.DataFrame(data)
+    rows = []
+    for coin_id, meta in ASSET_UNIVERSE.items():
+        paprika_id = meta["paprika"]
+        ticker = _cp_get(f"/tickers/{paprika_id}")
+        usd = ticker.get("quotes", {}).get("USD", {})
+        rows.append({
+            "id": coin_id,
+            "symbol": meta["symbol"],
+            "name": ticker.get("name", coin_id),
+            "current_price": usd.get("price", 0.0),
+            "market_cap": usd.get("market_cap", 0.0),
+            "market_cap_rank": ticker.get("rank"),
+            "total_volume": usd.get("volume_24h", 0.0),
+            "circulating_supply": ticker.get("circulating_supply") or ticker.get("total_supply"),
+            "max_supply": ticker.get("max_supply"),
+            "price_change_percentage_24h": usd.get("percent_change_24h", 0.0),
+            "price_change_percentage_7d_in_currency": usd.get("percent_change_7d", 0.0),
+            "price_change_percentage_30d_in_currency": usd.get("percent_change_30d", 0.0),
+        })
+
+    df = pd.DataFrame(rows)
     log.info("Fetched market overview for %d assets", len(df))
     return df
 
 
+@functools.lru_cache(maxsize=1)
+def _market_overview_cache() -> pd.DataFrame:
+    """Process-local cache to avoid refetching overview data on Streamlit reruns."""
+    return _fetch_market_overview_cached()
+
+
+def fetch_market_overview() -> pd.DataFrame:
+    """Return a copy of the cached market overview snapshot."""
+    return _market_overview_cache().copy(deep=True)
+
+
 @retry(max_attempts=1, delay=2.0)
+def _fetch_coin_details_cached(coin_id: str) -> dict:
+    """Fetch extended coin data from CoinPaprika."""
+    paprika_id = ASSET_UNIVERSE[coin_id]["paprika"]
+    return _cp_get(f"/coins/{paprika_id}")
+
+
+@functools.lru_cache(maxsize=64)
+def _coin_details_cache(coin_id: str) -> dict:
+    """Process-local cache for per-asset metadata."""
+    return _fetch_coin_details_cached(coin_id)
+
+
 def fetch_coin_details(coin_id: str) -> dict:
-    """Fetch extended coin data (developer stats, community, etc.)."""
-    data = _cg_get(f"/coins/{coin_id}", {
-        "localization": "false",
-        "tickers": "false",
-        "market_data": "false",
-        "community_data": "true",
-        "developer_data": "true",
-    })
-    return data
+    """Return a copy of cached per-asset details."""
+    return copy.deepcopy(_coin_details_cache(coin_id))
 
 
 # ── Yahoo Finance OHLCV ──────────────────────────────────────────────────────
@@ -145,7 +173,7 @@ def fetch_all_asset_data(coin_id: str) -> dict:
     try:
         details = fetch_coin_details(coin_id)
     except Exception as e:
-        log.warning("CoinGecko details failed for %s: %s", coin_id, e)
+        log.warning("CoinPaprika details failed for %s: %s", coin_id, e)
 
     try:
         github = fetch_github_activity(meta.get("github"))

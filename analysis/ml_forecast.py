@@ -13,13 +13,20 @@ import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
-import xgboost as xgb
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from config import ML_FORECAST_HORIZON, ML_TRAIN_WINDOW, ML_FEATURES_LAGS
 from utils.helpers import get_logger, safe_div
 
 log = get_logger(__name__)
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+try:
+    import xgboost as xgb
+    XGBOOST_IMPORT_ERROR = None
+except Exception as exc:
+    xgb = None
+    XGBOOST_IMPORT_ERROR = exc
+    log.warning("XGBoost unavailable, ML direction classifier will fall back to neutral: %s", exc)
 
 
 # ── Feature Engineering ──────────────────────────────────────────────────────
@@ -100,11 +107,20 @@ def classify_direction(df: pd.DataFrame) -> dict:
             "cv_accuracy": float,
         }
     """
+    if xgb is None:
+        return {
+            "direction": "neutral",
+            "probabilities": {"bullish": 0.33, "bearish": 0.33, "neutral": 0.34},
+            "confidence": 34.0,
+            "cv_accuracy": 0.0,
+            "model_status": f"xgboost unavailable: {XGBOOST_IMPORT_ERROR}",
+        }
+
     if len(df) < ML_TRAIN_WINDOW + ML_FORECAST_HORIZON + 10:
         log.warning("Insufficient data for direction classifier (%d bars)", len(df))
         return {
             "direction": "neutral", "probabilities": {"bullish": 0.33, "bearish": 0.33, "neutral": 0.34},
-            "confidence": 33.0, "cv_accuracy": 0.0,
+            "confidence": 33.0, "cv_accuracy": 0.0, "model_status": "insufficient_data",
         }
 
     features = _build_features(df)
@@ -115,7 +131,7 @@ def classify_direction(df: pd.DataFrame) -> dict:
     if len(combined) < 50:
         return {
             "direction": "neutral", "probabilities": {"bullish": 0.33, "bearish": 0.33, "neutral": 0.34},
-            "confidence": 33.0, "cv_accuracy": 0.0,
+            "confidence": 33.0, "cv_accuracy": 0.0, "model_status": "insufficient_training_rows",
         }
 
     X = combined.drop(columns=["target"])
@@ -177,6 +193,7 @@ def classify_direction(df: pd.DataFrame) -> dict:
         "probabilities": probabilities,
         "confidence": round(confidence, 1),
         "cv_accuracy": round(cv_acc, 4),
+        "model_status": "ok",
     }
 
 

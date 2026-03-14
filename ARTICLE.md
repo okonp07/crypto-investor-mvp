@@ -166,7 +166,7 @@ The app opens in your browser with a sidebar on the left. Select your risk toler
 
 > [Screenshot: Sidebar showing risk tolerance selector with weight breakdown and the Run Analysis button]
 
-The pipeline takes 2-5 minutes as it fetches data from CoinGecko, Yahoo Finance, RSS feeds, and optionally CryptoPanic and GitHub. A progress indicator tracks each asset.
+The pipeline takes a couple of minutes as it fetches data from CoinPaprika, Yahoo Finance, RSS feeds, and optionally CryptoPanic and GitHub. A progress indicator tracks each asset.
 
 When it finishes, the main panel shows the market regime (bullish/bearish/mixed), the analysis timestamp, and three cards for the top picks. Each card displays the current price, entry/exit/stop-loss levels, final score, leverage, risk/reward ratio, expected return, and ML direction with confidence.
 
@@ -187,7 +187,7 @@ Below the top picks, a full rankings table shows all 15 assets sorted by final s
 The codebase follows a clean pipeline architecture:
 
 ```
-data/          → Fetch market data (CoinGecko, Yahoo Finance) and news (RSS, CryptoPanic)
+data/          → Fetch market data (CoinPaprika, Yahoo Finance) and news (RSS, CryptoPanic)
 analysis/      → Score each pillar (technical, fundamental, sentiment, ML)
 scoring/       → Blend pillar scores, determine market regime, rank assets
 strategy/      → Calculate entry/exit/stop-loss, estimate leverage
@@ -195,7 +195,7 @@ app.py         → Streamlit frontend — orchestrates the pipeline and renders 
 config.py      → Single source of truth for all weights, thresholds, and parameters
 ```
 
-Everything is config-driven. Want to change the RSI period from 14 to 21? Edit one line in `config.py`. Want to add a 16th asset? Add its CoinGecko ID, Yahoo ticker, and symbol to the asset list. Want to swap XGBoost for a different classifier? The ML module has a clean interface — plug in your model and return a direction, probabilities, and confidence.
+Everything is config-driven. Want to change the RSI period from 14 to 21? Edit one line in `config.py`. Want to add a 16th asset? Add its internal asset ID, CoinPaprika ID, Yahoo ticker, and symbol to the asset list. Want to swap XGBoost for a different classifier? The ML module has a clean interface — plug in your model and return a direction, probabilities, and confidence.
 
 The stack is entirely open-source: **Streamlit** for the UI, **Plotly** for interactive charts, **yfinance** for price data, the **ta** library for technical indicators, **VADER** and **TextBlob** for sentiment, **XGBoost** for classification, and **statsmodels** for exponential smoothing. No paid APIs are required for core functionality — CryptoPanic and GitHub tokens are optional enhancements.
 
@@ -205,7 +205,7 @@ The stack is entirely open-source: **Streamlit** for the UI, **Plotly** for inte
 
 We built this as an MVP, and it's important to be honest about its boundaries.
 
-**Not real-time.** The tool fetches data on-demand. It's designed for daily or weekly analysis, not intraday trading. CoinGecko's free-tier rate limit (one call every 0.7 seconds) means the full pipeline takes a few minutes.
+**Not real-time.** The tool fetches data on-demand. It's designed for daily or weekly analysis, not intraday trading. Even with CoinPaprika and caching, the full pipeline still takes a few minutes because it relies on multiple live APIs.
 
 **Sentiment coverage is narrow.** Four RSS feeds and an optional API capture major headlines but miss crypto Twitter, Reddit, Discord, and on-chain social signals — which often move markets faster than news articles.
 
