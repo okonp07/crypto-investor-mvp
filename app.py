@@ -774,6 +774,162 @@ def render_health_check(all_results: dict):
         st.success("ML classifier is active across the analysed asset set.")
 
 
+def _format_factor_value(value) -> str:
+    """Make report values readable in markdown."""
+    if isinstance(value, dict):
+        return ", ".join(f"{k}: {v}" for k, v in value.items())
+    if value is None:
+        return "N/A"
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
+
+
+def generate_transparency_report(pick: dict, risk_level: str) -> str:
+    """Generate a detailed transparency report for a single asset."""
+    symbol = pick["symbol"]
+    current_price = float(pick["current_price"])
+    technical = pick.get("technical", {})
+    fundamental = pick.get("fundamental", {})
+    sentiment = pick.get("sentiment", {})
+    ml = pick.get("ml_forecast", {})
+    final = pick.get("final", {})
+    ohlcv = pick.get("ohlcv", pd.DataFrame())
+    levels = compute_levels(current_price, technical, ml, risk_level)
+
+    daily_vol = 0.0
+    if not ohlcv.empty:
+        daily_vol = float(ohlcv["Close"].pct_change().tail(30).std() * 100)
+    leverage_info = compute_leverage(
+        risk_level,
+        daily_vol,
+        ml.get("direction", {}).get("confidence", 50),
+    )
+
+    lines = [
+        f"# {symbol} Transparency Report",
+        "",
+        f"- Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+        f"- Risk profile: {risk_level}",
+        f"- Current price: {format_price(current_price)}",
+        f"- Final score: {final.get('final_score', 0):.1f}/100",
+        "",
+        "## Data Sources",
+        "- OHLCV / price history: Yahoo Finance via yfinance",
+        "- Market metadata: CoinPaprika",
+        "- News sentiment: RSS feeds plus optional CryptoPanic",
+        "- Developer activity: GitHub API where repository metadata is configured",
+        "",
+        "## Final Score Composition",
+    ]
+
+    for name, component in final.get("components", {}).items():
+        lines.append(
+            f"- {name.replace('_', ' ').title()}: raw {component.get('raw', 0):.1f}, "
+            f"weight {component.get('weight', 0):.0%}, weighted contribution {component.get('weighted', 0):.2f}"
+        )
+
+    lines.extend([
+        "",
+        "## Technical Score Detail",
+        f"- Technical trend: {technical.get('trend', 'neutral')}",
+    ])
+    for name, info in technical.get("signals", {}).items():
+        lines.append(
+            f"- {name.replace('_', ' ').title()}: score {info.get('score', 0):.1f}, signal {info.get('signal', 'neutral')}"
+        )
+
+    sr = technical.get("support_resistance", {})
+    if sr:
+        lines.extend([
+            "",
+            "### Support / Resistance Snapshot",
+            f"- Support: {_format_factor_value(sr.get('support'))}",
+            f"- Resistance: {_format_factor_value(sr.get('resistance'))}",
+            f"- Pivot: {_format_factor_value(sr.get('pivot'))}",
+        ])
+
+    lines.extend([
+        "",
+        "## Fundamental Score Detail",
+    ])
+    for name, info in fundamental.get("factors", {}).items():
+        lines.append(
+            f"- {name.replace('_', ' ').title()}: value {_format_factor_value(info.get('value'))}, "
+            f"score {info.get('score', 0):.1f}"
+        )
+
+    lines.extend([
+        "",
+        "## Sentiment Score Detail",
+        f"- Sentiment score: {sentiment.get('score', 0):.1f}/100",
+        f"- Sentiment trend: {sentiment.get('trend', 'stable')}",
+        f"- Article count: {sentiment.get('article_count', 0)}",
+        f"- Positive / Negative / Neutral: "
+        f"{sentiment.get('positive_pct', 0):.0f}% / "
+        f"{sentiment.get('negative_pct', 0):.0f}% / "
+        f"{sentiment.get('neutral_pct', 0):.0f}%",
+    ])
+    if sentiment.get("top_positive"):
+        lines.append("- Top positive headlines:")
+        for item in sentiment["top_positive"][:3]:
+            lines.append(f"  - {item['title']} ({item['score']:.3f})")
+    if sentiment.get("top_negative"):
+        lines.append("- Top negative headlines:")
+        for item in sentiment["top_negative"][:3]:
+            lines.append(f"  - {item['title']} ({item['score']:.3f})")
+
+    direction = ml.get("direction", {})
+    forecast = ml.get("forecast", {})
+    lines.extend([
+        "",
+        "## ML Forecast Detail",
+        f"- ML score: {ml.get('score', 0):.1f}/100",
+        f"- Direction: {direction.get('direction', 'neutral')}",
+        f"- Confidence: {direction.get('confidence', 0):.1f}%",
+        f"- Cross-validation accuracy: {direction.get('cv_accuracy', 0):.4f}",
+        f"- Model status: {direction.get('model_status', 'unknown')}",
+        f"- Expected return from forecast: {forecast.get('expected_return_pct', 0):+.2f}%",
+        f"- Forecast mean: {_format_factor_value(forecast.get('forecast_mean'))}",
+        f"- Forecast low/high: {_format_factor_value(forecast.get('forecast_low'))} / {_format_factor_value(forecast.get('forecast_high'))}",
+    ])
+
+    lines.extend([
+        "",
+        "## Trade Levels And Why They Were Chosen",
+        f"- Entry price: {format_price(levels['entry_price'])}",
+        f"- Stop-loss: {format_price(levels['stop_loss'])}",
+        f"- Take-profit / exit: {format_price(levels['exit_price'])}",
+        f"- Risk / Reward: {levels['risk_reward_ratio']:.2f}:1",
+        f"- Expected return: {levels['expected_return_pct']:+.2f}%",
+        f"- Suggested leverage: {leverage_info.get('leverage', 1)}x",
+        f"- Entry / exit methodology: {levels.get('methodology', '')}",
+        f"- Leverage rationale: {leverage_info.get('rationale', '')}",
+        "",
+        "## Interpretation Notes",
+        "- The score is a weighted synthesis of multiple independent signals rather than a guarantee.",
+        "- Trade levels are model-driven suggestions built from current data, not certainty about future price action.",
+        "- All outputs depend on live third-party data and may change between runs.",
+    ])
+
+    return "\n".join(lines)
+
+
+def render_transparency_report(pick: dict, risk_level: str, key_prefix: str):
+    """Render an openable transparency report plus download link for a given asset."""
+    report = generate_transparency_report(pick, risk_level)
+    with st.expander("Transparency Report"):
+        st.markdown(report)
+        st.download_button(
+            "Download Report",
+            data=report,
+            file_name=f"{pick['symbol'].lower()}_transparency_report.md",
+            mime="text/markdown",
+            key=f"{key_prefix}-download-report",
+            use_container_width=True,
+        )
+
+
 def render_pick_banner(rank_num: int, symbol: str, trend: str, final_score: float, reasoning: str):
     """Render a stylized header for each top pick."""
     summary_line = reasoning.splitlines()[0] if reasoning else ""
@@ -962,6 +1118,8 @@ def render_asset_detail_panel(pick: dict, risk_level: str):
             st.plotly_chart(build_price_chart(ohlcv, symbol, forecast_prices), use_container_width=True)
         else:
             st.info("No chart data available.")
+
+    render_transparency_report(pick, risk_level, f"detail-{symbol}")
 
 
 def render_sidebar_portfolio(top_picks: list[dict], risk_level: str):
@@ -1439,6 +1597,8 @@ def display_results(all_results: dict, risk_level: str):
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("No chart data available.")
+
+            render_transparency_report(pick, risk_level, f"pick-{rank_num}-{symbol}")
 
             st.divider()
 

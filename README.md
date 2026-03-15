@@ -25,6 +25,7 @@ For each tracked asset, the app:
 - suggests entry price, stop-loss, take-profit, leverage, and risk/reward
 - checkpoints progress after each completed asset so interrupted runs can resume
 - shows partial results during the scan instead of waiting for all 15 assets to finish
+- generates per-asset transparency reports explaining score construction, data sources, and trade-level logic
 
 ## Current Product State
 
@@ -40,6 +41,7 @@ The current frontend is a polished Streamlit dashboard with:
 - a one-click watchlist in the sidebar
 - a score-weighted suggested allocation panel for the current top picks
 - a health-check panel that shows whether the full pipeline and ML layer are active
+- downloadable transparency reports for selected assets and top picks
 - detailed top-pick cards with chart, sentiment, rationale, and risk controls
 
 ## Data Sources
@@ -83,6 +85,22 @@ For each strong candidate, the app surfaces:
 - `Suggested leverage`
 
 These are computed from support/resistance, ATR-style logic, forecast levels, confidence, and user-selected risk tolerance.
+
+## Transparency Reports
+
+TalentPoint includes a built-in transparency report for selected assets and top picks.
+
+Each report explains:
+
+- the raw and weighted contribution of each score pillar
+- the underlying technical and fundamental factor scores
+- sentiment article counts and headline summaries
+- ML direction, confidence, forecast range, and model status
+- data-source provenance for the asset analysis
+- why the suggested entry, stop-loss, and take-profit levels were chosen
+- leverage rationale and risk/reward context
+
+Reports can be viewed in-app and downloaded as markdown files for review or sharing.
 
 ## Run Experience
 
@@ -202,6 +220,7 @@ Notes:
 - redesigned the Streamlit UI with tabs, sparklines, watchlist, and allocation guidance
 - added resumable scan checkpoints and live partial-results rendering during long runs
 - added a visible pipeline health-check section and resume-status card
+- added per-asset transparency reports and downloadable explanation files
 - deployed the app to Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
 ## Tech Stack
