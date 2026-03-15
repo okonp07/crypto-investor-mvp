@@ -36,12 +36,12 @@ The current frontend is a polished Streamlit dashboard with:
 - `Overview`, `Picks`, and `Universe` tabs to reduce scroll length
 - a visible resume-status card that shows checkpoint progress, next asset, and save time
 - a live runboard that surfaces rolling rankings and latest-completed asset details during the scan
-- an interactive rankings table with progress bars and mini price-action sparklines
+- an interactive rankings table with progress bars, mini price-action sparklines, and direct report links for each asset
 - persistent asset selection across tabs
 - a one-click watchlist in the sidebar
 - a score-weighted suggested allocation panel for the current top picks
 - a health-check panel that shows whether the full pipeline and ML layer are active
-- downloadable transparency reports for selected assets and top picks
+- downloadable transparency reports for selected assets, top picks, and non-top-ranked assets opened from the rankings or universe views
 - detailed top-pick cards with chart, sentiment, rationale, and risk controls
 
 ## Data Sources
@@ -88,7 +88,7 @@ These are computed from support/resistance, ATR-style logic, forecast levels, co
 
 ## Transparency Reports
 
-TalentPoint includes a built-in transparency report for selected assets and top picks.
+TalentPoint includes a built-in transparency report for every analysed asset in a run.
 
 Each report explains:
 
@@ -101,6 +101,8 @@ Each report explains:
 - leverage rationale and risk/reward context
 
 Reports can be viewed in-app and downloaded as markdown files for review or sharing.
+
+You can also open a report directly from the rolling rankings table via the `Open report` link beside each asset, which deep-links into that asset's review panel even if the asset is not in the top 3.
 
 ## Run Experience
 
@@ -221,6 +223,7 @@ Notes:
 - added resumable scan checkpoints and live partial-results rendering during long runs
 - added a visible pipeline health-check section and resume-status card
 - added per-asset transparency reports and downloadable explanation files
+- added direct transparency-report links inside the rolling rankings table for all analysed assets
 - deployed the app to Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
 ## Tech Stack
