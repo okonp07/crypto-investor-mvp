@@ -563,16 +563,21 @@ st.markdown("""
 st.markdown(
     f"""
     <style>
-        [data-testid="stSidebar"] [data-testid="baseButton-primary"] {{
-            background: linear-gradient(135deg, {button_accent} 0%, {button_accent_soft} 100%);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: #f8fafc;
-            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.28);
+        [data-testid="stSidebar"] button[kind="primary"],
+        [data-testid="stSidebar"] [data-testid="baseButton-primary"],
+        [data-testid="stSidebar"] .stButton > button[kind="primary"] {{
+            background: linear-gradient(135deg, {button_accent} 0%, {button_accent_soft} 100%) !important;
+            background-color: {button_accent} !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            color: #f8fafc !important;
+            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.28) !important;
         }}
 
-        [data-testid="stSidebar"] [data-testid="baseButton-primary"]:hover {{
+        [data-testid="stSidebar"] button[kind="primary"]:hover,
+        [data-testid="stSidebar"] [data-testid="baseButton-primary"]:hover,
+        [data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {{
             filter: brightness(1.05);
-            border-color: rgba(255, 255, 255, 0.14);
+            border-color: rgba(255, 255, 255, 0.14) !important;
         }}
     </style>
     """,
