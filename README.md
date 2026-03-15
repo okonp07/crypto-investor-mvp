@@ -245,4 +245,4 @@ Notes:
 ## Quick Access
 
 - Live app: [https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
-- PRD for the latest upgrade: [PRD_UI_AND_RELIABILITY_UPDATE.md](/Users/researchanddevelopment2/Documents/Zindi/crypto-investor-mvp/PRD_UI_AND_RELIABILITY_UPDATE.md)
+- PRD for the latest upgrade: [https://github.com/okonp07/crypto-investor-mvp/blob/main/PRD_UI_AND_RELIABILITY_UPDATE.md](https://github.com/okonp07/crypto-investor-mvp/blob/main/PRD_UI_AND_RELIABILITY_UPDATE.md)
