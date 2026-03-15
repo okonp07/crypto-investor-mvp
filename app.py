@@ -105,6 +105,11 @@ def get_resume_state(risk_level: str) -> dict | None:
         return None
     return payload
 
+
+def mark_analysis_running():
+    """Flip the UI into active-run mode."""
+    st.session_state["analysis_running"] = True
+
 # ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="TalentPoint",
@@ -116,6 +121,9 @@ st.set_page_config(
 query_risk_level = str(st.query_params.get("risk", "moderate")).lower()
 if query_risk_level not in RISK_OPTIONS:
     query_risk_level = "moderate"
+st.session_state.setdefault("analysis_running", False)
+button_accent = "#22c55e" if st.session_state.get("analysis_running") else "#38bdf8"
+button_accent_soft = "#16a34a" if st.session_state.get("analysis_running") else "#2563eb"
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -129,6 +137,7 @@ st.markdown("""
         --panel-border: rgba(148, 163, 184, 0.18);
         --text-main: #f8fafc;
         --text-soft: #9fb0c7;
+        --primary-color: #38bdf8;
         --accent: #f97316;
         --accent-2: #22c55e;
         --accent-3: #38bdf8;
@@ -536,12 +545,39 @@ st.markdown("""
         box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.05);
     }
 
+    [data-testid="stProgressBar"] > div > div > div > div {
+        background: linear-gradient(90deg, #38bdf8 0%, #2563eb 100%) !important;
+    }
+
+    [data-testid="stDataFrame"] [role="progressbar"] > div {
+        background: linear-gradient(90deg, #38bdf8 0%, #2563eb 100%) !important;
+    }
+
     @media (max-width: 900px) {
         .hero-title { font-size: 2.35rem; }
         .micro-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 </style>
 """, unsafe_allow_html=True)
+
+st.markdown(
+    f"""
+    <style>
+        [data-testid="stSidebar"] [data-testid="baseButton-primary"] {{
+            background: linear-gradient(135deg, {button_accent} 0%, {button_accent_soft} 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #f8fafc;
+            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.28);
+        }}
+
+        [data-testid="stSidebar"] [data-testid="baseButton-primary"]:hover {{
+            filter: brightness(1.05);
+            border-color: rgba(255, 255, 255, 0.14);
+        }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -587,7 +623,12 @@ with st.sidebar:
             icon="⏯️",
         )
 
-    run_btn = st.button("Run / Resume Analysis", type="primary", use_container_width=True)
+    run_btn = st.button(
+        "Run / Resume Analysis",
+        type="primary",
+        use_container_width=True,
+        on_click=mark_analysis_running,
+    )
     reset_run_btn = st.button("Start Fresh Run", use_container_width=True)
 
     st.divider()
@@ -1883,11 +1924,13 @@ if reset_run_btn:
     clear_run_checkpoint()
     st.session_state.pop("results", None)
     st.session_state.pop("risk_level", None)
+    st.session_state["analysis_running"] = False
     st.toast("Fresh run state cleared. The next scan will start from asset 1.", icon="♻️")
 
 if run_btn:
     with st.spinner("Running full analysis pipeline..."):
         results = run_analysis(risk_level)
+    st.session_state["analysis_running"] = False
     if results:
         st.session_state["results"] = results
         st.session_state["risk_level"] = risk_level
