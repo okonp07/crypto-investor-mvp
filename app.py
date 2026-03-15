@@ -1243,6 +1243,7 @@ def render_asset_detail_panel(
     risk_level: str,
     rank: int | None = None,
     total_assets: int | None = None,
+    panel_key_prefix: str = "detail",
 ):
     """Render a focused detail panel for a selected asset."""
     symbol = pick["symbol"]
@@ -1288,7 +1289,7 @@ def render_asset_detail_panel(
             st.plotly_chart(
                 build_price_chart(ohlcv, symbol, forecast_prices),
                 use_container_width=True,
-                key=f"detail-chart-{symbol}-{rank or 'na'}",
+                key=f"{panel_key_prefix}-chart-{symbol}-{rank or 'na'}",
             )
         else:
             st.info("No chart data available.")
@@ -1296,7 +1297,7 @@ def render_asset_detail_panel(
     render_transparency_report(
         pick,
         risk_level,
-        f"detail-{symbol}",
+        f"{panel_key_prefix}-{symbol}",
         rank=rank,
         total_assets=total_assets,
     )
@@ -1426,6 +1427,7 @@ def render_live_runboard(all_results: dict, total_assets: int, risk_level: str, 
             risk_level,
             rank=rank_lookup.get(latest_pick["symbol"]),
             total_assets=len(all_results),
+            panel_key_prefix="live-detail",
         )
 
         st.markdown("### Rolling Rankings")
@@ -1529,6 +1531,7 @@ def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str
             risk_level,
             rank=rank_lookup.get(chosen_symbol),
             total_assets=len(all_results),
+            panel_key_prefix="universe-detail",
         )
 
     st.divider()
@@ -1747,6 +1750,7 @@ def display_results(all_results: dict, risk_level: str):
                 risk_level,
                 rank=rank_lookup.get(selected_symbol),
                 total_assets=len(all_results),
+                panel_key_prefix="overview-detail",
             )
 
     with picks_tab:
