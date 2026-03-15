@@ -1206,6 +1206,44 @@ def build_price_series(ohlcv: pd.DataFrame, points: int = 24) -> list[float]:
     return [round(float(v), 6) for v in closes.tolist()]
 
 
+def score_bar_text(value: float, width: int = 10) -> str:
+    """Render a compact text bar to avoid Streamlit's red default progress cells."""
+    filled = max(0, min(width, round((value / 100) * width)))
+    return f"{'█' * filled}{'░' * (width - filled)} {value:.0f}"
+
+
+def sparkline_text(values: list[float]) -> str:
+    """Render a unicode sparkline for stable color control inside the dataframe."""
+    if not values:
+        return "N/A"
+    bars = "▁▂▃▄▅▆▇█"
+    low = min(values)
+    high = max(values)
+    if high == low:
+        return bars[3] * min(len(values), 18)
+    scaled = [
+        bars[min(len(bars) - 1, int((value - low) / (high - low) * (len(bars) - 1)))]
+        for value in values[-18:]
+    ]
+    return "".join(scaled)
+
+
+def render_analysis_progress(placeholder, percent: int, text: str):
+    """Render a blue analysis progress bar using app-controlled markup."""
+    safe_percent = max(0, min(100, int(percent)))
+    placeholder.markdown(
+        f"""
+        <div style="margin:0.5rem 0 1.15rem 0;">
+            <div style="color:#f8fafc; font-size:0.95rem; margin-bottom:0.45rem;">{text}</div>
+            <div style="width:100%; height:14px; border-radius:999px; background:rgba(148,163,184,0.18); overflow:hidden;">
+                <div style="width:{safe_percent}%; height:100%; border-radius:999px; background:linear-gradient(90deg, #38bdf8 0%, #2563eb 100%);"></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def trend_label(trend: str) -> str:
     """Create a compact, scan-friendly trend label."""
     icons = {"bullish": "▲", "bearish": "▼", "neutral": "●"}
@@ -1250,13 +1288,13 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
             "Report": build_asset_report_href(data["symbol"], risk_level),
             "Price": float(data["current_price"]),
             "Trend": trend_label(data["technical"]["trend"]),
-            "Technical": float(data["technical"]["score"]),
-            "Fundamental": float(data["fundamental"]["score"]),
-            "Sentiment": float(data["sentiment"]["score"]),
-            "ML": float(data["ml_forecast"]["score"]),
-            "Final Score": float(data["final"]["final_score"]),
+            "Technical": score_bar_text(float(data["technical"]["score"])),
+            "Fundamental": score_bar_text(float(data["fundamental"]["score"])),
+            "Sentiment": score_bar_text(float(data["sentiment"]["score"])),
+            "ML": score_bar_text(float(data["ml_forecast"]["score"])),
+            "Final Score": score_bar_text(float(data["final"]["final_score"])),
             "Narrative": sentiment_label(data["sentiment"]),
-            "Sparkline": build_price_series(data.get("ohlcv", pd.DataFrame())),
+            "Sparkline": sparkline_text(build_price_series(data.get("ohlcv", pd.DataFrame()))),
         })
 
     ranking_df = pd.DataFrame(rows)
@@ -1267,6 +1305,10 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
             else "color: #fda4af; font-weight: 700;"
         ),
         subset=["Recommendation"],
+    )
+    ranking_styler = ranking_styler.map(
+        lambda _: "color: #7dd3fc; font-family: monospace; letter-spacing: 0.03em;",
+        subset=["Technical", "Fundamental", "Sentiment", "ML", "Final Score", "Sparkline"],
     )
     event = st.dataframe(
         ranking_styler,
@@ -1281,13 +1323,13 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
             "Report": st.column_config.LinkColumn("Report", display_text="Open report", width="small"),
             "Price": st.column_config.NumberColumn("Price", format="$%.4f"),
             "Trend": st.column_config.TextColumn("Trend", width="small"),
-            "Technical": st.column_config.ProgressColumn("Technical", min_value=0, max_value=100, format="%.0f"),
-            "Fundamental": st.column_config.ProgressColumn("Fundamental", min_value=0, max_value=100, format="%.0f"),
-            "Sentiment": st.column_config.ProgressColumn("Sentiment", min_value=0, max_value=100, format="%.0f"),
-            "ML": st.column_config.ProgressColumn("ML", min_value=0, max_value=100, format="%.0f"),
-            "Final Score": st.column_config.ProgressColumn("Final Score", min_value=0, max_value=100, format="%.1f"),
+            "Technical": st.column_config.TextColumn("Technical", width="medium"),
+            "Fundamental": st.column_config.TextColumn("Fundamental", width="medium"),
+            "Sentiment": st.column_config.TextColumn("Sentiment", width="medium"),
+            "ML": st.column_config.TextColumn("ML", width="medium"),
+            "Final Score": st.column_config.TextColumn("Final Score", width="medium"),
             "Narrative": st.column_config.TextColumn("Sentiment Tone", width="small"),
-            "Sparkline": st.column_config.LineChartColumn("Price Action", y_min=None, y_max=None, width="medium"),
+            "Sparkline": st.column_config.TextColumn("Price Action", width="medium"),
         },
     )
     try:
@@ -1654,7 +1696,8 @@ def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str
 # ── Main Analysis Pipeline ───────────────────────────────────────────────────
 def run_analysis(risk_level: str) -> dict:
     """Execute the full analysis pipeline for all assets."""
-    progress = st.progress(0, text="Fetching market overview...")
+    progress_placeholder = st.empty()
+    render_analysis_progress(progress_placeholder, 0, "Fetching market overview...")
     live_placeholder = st.empty()
 
     # 1. Market overview
@@ -1688,9 +1731,10 @@ def run_analysis(risk_level: str) -> dict:
         pct = int((idx + 1) / total_assets * 100)
 
         def update_status(stage: str):
-            progress.progress(
+            render_analysis_progress(
+                progress_placeholder,
                 pct,
-                text=f"Analysing {symbol} ({idx+1}/{total_assets}) - {stage}...",
+                f"Analysing {symbol} ({idx+1}/{total_assets}) - {stage}...",
             )
 
         try:
@@ -1770,7 +1814,7 @@ def run_analysis(risk_level: str) -> dict:
                     processed_count=idx + 1,
                 )
 
-    progress.progress(100, text="Analysis complete!")
+    render_analysis_progress(progress_placeholder, 100, "Analysis complete!")
     clear_run_checkpoint()
     return all_results
 
