@@ -1285,7 +1285,11 @@ def render_asset_detail_panel(
     with st.expander("Selected Asset Chart", expanded=True):
         if not ohlcv.empty:
             forecast_prices = ml.get("forecast", {}).get("forecast_prices", [])
-            st.plotly_chart(build_price_chart(ohlcv, symbol, forecast_prices), use_container_width=True)
+            st.plotly_chart(
+                build_price_chart(ohlcv, symbol, forecast_prices),
+                use_container_width=True,
+                key=f"detail-chart-{symbol}-{rank or 'na'}",
+            )
         else:
             st.info("No chart data available.")
 
@@ -1825,7 +1829,11 @@ def display_results(all_results: dict, risk_level: str):
                 if not ohlcv.empty:
                     forecast_prices = ml.get("forecast", {}).get("forecast_prices", [])
                     fig = build_price_chart(ohlcv, symbol, forecast_prices)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True,
+                        key=f"pick-chart-{rank_num}-{symbol}",
+                    )
                 else:
                     st.info("No chart data available.")
 
