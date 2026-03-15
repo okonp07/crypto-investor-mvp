@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -1373,8 +1374,7 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
             """
         )
 
-    st.markdown(
-        f"""
+    table_html = f"""
         <div style="overflow-x:auto; border:1px solid rgba(148,163,184,0.16); border-radius:20px; background:rgba(10,22,39,0.72);">
             <table style="width:100%; border-collapse:collapse; min-width:1180px;">
                 <thead>
@@ -1403,9 +1403,8 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
             tbody tr:not(:last-child) td {{ border-bottom: 1px solid rgba(148,163,184,0.12); }}
             tbody td {{ padding:0.8rem 1rem; vertical-align:middle; }}
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """
+    components.html(table_html, height=72 + 56 * max(len(rows), 1), scrolling=True)
     return None
 
 
