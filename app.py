@@ -1266,13 +1266,18 @@ def build_asset_report_href(symbol: str, risk_level: str) -> str:
     return f"?asset={quote(symbol)}&focus=report&risk={quote(risk_level)}"
 
 
+def build_asset_detail_href(symbol: str, risk_level: str) -> str:
+    """Build a deep link that opens the selected asset detail view."""
+    return f"?asset={quote(symbol)}&risk={quote(risk_level)}"
+
+
 def rankings_recommendation(review: dict) -> str:
     """Collapse review status into a binary ranking recommendation label."""
     return "Recommended" if review.get("status") == "Recommended" else "Not Recommended"
 
 
 def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
-    """Render an interactive rankings table with score bars and sparklines."""
+    """Render a custom rankings table with blue score bars and line sparklines."""
     rows = []
     for cid, data in sorted(
         all_results.items(),
@@ -1285,61 +1290,122 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
             "Rank": rank,
             "Symbol": data["symbol"],
             "Recommendation": rankings_recommendation(review),
+            "AssetHref": build_asset_detail_href(data["symbol"], risk_level),
             "Report": build_asset_report_href(data["symbol"], risk_level),
             "Price": float(data["current_price"]),
             "Trend": trend_label(data["technical"]["trend"]),
-            "Technical": score_bar_text(float(data["technical"]["score"])),
-            "Fundamental": score_bar_text(float(data["fundamental"]["score"])),
-            "Sentiment": score_bar_text(float(data["sentiment"]["score"])),
-            "ML": score_bar_text(float(data["ml_forecast"]["score"])),
-            "Final Score": score_bar_text(float(data["final"]["final_score"])),
+            "Technical": float(data["technical"]["score"]),
+            "Fundamental": float(data["fundamental"]["score"]),
+            "Sentiment": float(data["sentiment"]["score"]),
+            "ML": float(data["ml_forecast"]["score"]),
+            "Final Score": float(data["final"]["final_score"]),
             "Narrative": sentiment_label(data["sentiment"]),
-            "Sparkline": sparkline_text(build_price_series(data.get("ohlcv", pd.DataFrame()))),
+            "Sparkline": build_price_series(data.get("ohlcv", pd.DataFrame())),
         })
 
-    ranking_df = pd.DataFrame(rows)
-    ranking_styler = ranking_df.style.map(
-        lambda value: (
-            "color: #86efac; font-weight: 700;"
-            if value == "Recommended"
-            else "color: #fda4af; font-weight: 700;"
-        ),
-        subset=["Recommendation"],
+    def html_escape(text: str) -> str:
+        return (
+            str(text)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    def score_bar_html(value: float) -> str:
+        width = max(4, min(100, int(round(value))))
+        return (
+            '<div style="display:flex; align-items:center; gap:0.55rem; min-width:150px;">'
+            '<div style="flex:1; min-width:96px; height:10px; border-radius:999px; '
+            'background:rgba(148,163,184,0.16); overflow:hidden;">'
+            f'<div style="width:{width}%; height:100%; border-radius:999px; '
+            'background:linear-gradient(90deg, #7dd3fc 0%, #38bdf8 100%);"></div>'
+            '</div>'
+            f'<span style="color:#7dd3fc; font-weight:700;">{value:.0f}</span>'
+            '</div>'
+        )
+
+    def sparkline_svg(values: list[float]) -> str:
+        if not values:
+            return '<span style="color:#9fb0c7;">N/A</span>'
+        points = values[-18:]
+        low = min(points)
+        high = max(points)
+        width = 120
+        height = 28
+        if high == low:
+            coords = " ".join(f"{int(i * (width / max(len(points) - 1, 1))):.0f},{height/2:.1f}" for i in range(len(points)))
+        else:
+            coords = []
+            for i, value in enumerate(points):
+                x = i * (width / max(len(points) - 1, 1))
+                y = height - (((value - low) / (high - low)) * (height - 4) + 2)
+                coords.append(f"{x:.1f},{y:.1f}")
+            coords = " ".join(coords)
+        return (
+            f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            'xmlns="http://www.w3.org/2000/svg">'
+            f'<polyline fill="none" stroke="#60a5fa" stroke-width="2.2" '
+            f'stroke-linecap="round" stroke-linejoin="round" points="{coords}" />'
+            '</svg>'
+        )
+
+    table_rows = []
+    for row in rows:
+        rec_color = "#86efac" if row["Recommendation"] == "Recommended" else "#fda4af"
+        table_rows.append(
+            f"""
+            <tr>
+                <td>{row['Rank']}</td>
+                <td><a href="{row['AssetHref']}" target="_self" style="color:#f8fafc; text-decoration:none; font-weight:700;">{html_escape(row['Symbol'])}</a></td>
+                <td><span style="color:{rec_color}; font-weight:700;">{html_escape(row['Recommendation'])}</span></td>
+                <td><a href="{row['Report']}" target="_self" style="color:#7dd3fc; text-decoration:none; font-weight:600;">Open report</a></td>
+                <td style="color:#e2e8f0;">{format_price(row['Price'])}</td>
+                <td style="color:#e2e8f0;">{html_escape(row['Trend'])}</td>
+                <td>{score_bar_html(row['Technical'])}</td>
+                <td>{score_bar_html(row['Fundamental'])}</td>
+                <td>{score_bar_html(row['Sentiment'])}</td>
+                <td>{score_bar_html(row['ML'])}</td>
+                <td>{score_bar_html(row['Final Score'])}</td>
+                <td style="color:#e2e8f0;">{html_escape(row['Narrative'])}</td>
+                <td>{sparkline_svg(row['Sparkline'])}</td>
+            </tr>
+            """
+        )
+
+    st.markdown(
+        f"""
+        <div style="overflow-x:auto; border:1px solid rgba(148,163,184,0.16); border-radius:20px; background:rgba(10,22,39,0.72);">
+            <table style="width:100%; border-collapse:collapse; min-width:1180px;">
+                <thead>
+                    <tr style="background:rgba(15,23,42,0.72); color:#9fb0c7; text-transform:none;">
+                        <th style="padding:0.9rem 1rem; text-align:left;">Rank</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Asset</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Recommendation</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Report</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Price</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Trend</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Technical</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Fundamental</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Sentiment</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">ML</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Final Score</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Sentiment Tone</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Price Action</th>
+                    </tr>
+                </thead>
+                <tbody style="color:#f8fafc;">
+                    {"".join(table_rows)}
+                </tbody>
+            </table>
+        </div>
+        <style>
+            tbody tr:not(:last-child) td {{ border-bottom: 1px solid rgba(148,163,184,0.12); }}
+            tbody td {{ padding:0.8rem 1rem; vertical-align:middle; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-    ranking_styler = ranking_styler.map(
-        lambda _: "color: #7dd3fc; font-family: monospace; letter-spacing: 0.03em;",
-        subset=["Technical", "Fundamental", "Sentiment", "ML", "Final Score", "Sparkline"],
-    )
-    event = st.dataframe(
-        ranking_styler,
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        column_config={
-            "Rank": st.column_config.NumberColumn("Rank", format="%d", width="small"),
-            "Symbol": st.column_config.TextColumn("Asset", width="small"),
-            "Recommendation": st.column_config.TextColumn("Recommendation", width="medium"),
-            "Report": st.column_config.LinkColumn("Report", display_text="Open report", width="small"),
-            "Price": st.column_config.NumberColumn("Price", format="$%.4f"),
-            "Trend": st.column_config.TextColumn("Trend", width="small"),
-            "Technical": st.column_config.TextColumn("Technical", width="medium"),
-            "Fundamental": st.column_config.TextColumn("Fundamental", width="medium"),
-            "Sentiment": st.column_config.TextColumn("Sentiment", width="medium"),
-            "ML": st.column_config.TextColumn("ML", width="medium"),
-            "Final Score": st.column_config.TextColumn("Final Score", width="medium"),
-            "Narrative": st.column_config.TextColumn("Sentiment Tone", width="small"),
-            "Sparkline": st.column_config.TextColumn("Price Action", width="medium"),
-        },
-    )
-    try:
-        rows_selected = event.selection.rows
-    except Exception:
-        rows_selected = []
-    if rows_selected:
-        idx = rows_selected[0]
-        if 0 <= idx < len(ranking_df):
-            return str(ranking_df.iloc[idx]["Symbol"])
     return None
 
 
@@ -1547,7 +1613,7 @@ def render_live_runboard(
             risk_level,
             rank=rank_lookup.get(latest_pick["symbol"]),
             total_assets=len(all_results),
-            panel_key_prefix="live-detail",
+            panel_key_prefix=f"live-detail-{processed}",
         )
 
         st.markdown("### Rolling Rankings")
