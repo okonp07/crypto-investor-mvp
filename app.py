@@ -9,6 +9,7 @@ import os
 import pickle
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import streamlit as st
 import pandas as pd
@@ -785,7 +786,108 @@ def _format_factor_value(value) -> str:
     return str(value)
 
 
-def generate_transparency_report(pick: dict, risk_level: str) -> str:
+def build_asset_review(pick: dict, rank: int | None = None, total_assets: int | None = None) -> dict:
+    """Create a recommendation verdict and plain-language strengths/weaknesses."""
+    final_score = float(pick.get("final", {}).get("final_score", 0))
+    technical = pick.get("technical", {})
+    fundamental = pick.get("fundamental", {})
+    sentiment = pick.get("sentiment", {})
+    ml = pick.get("ml_forecast", {})
+
+    strengths = []
+    headwinds = []
+
+    if technical.get("score", 0) >= 60:
+        strengths.append(f"technical structure is supportive at {technical.get('score', 0):.1f}/100")
+    elif technical.get("score", 0) < 45:
+        headwinds.append(f"technical structure is weak at {technical.get('score', 0):.1f}/100")
+
+    if fundamental.get("score", 0) >= 60:
+        strengths.append(f"fundamentals are relatively strong at {fundamental.get('score', 0):.1f}/100")
+    elif fundamental.get("score", 0) < 45:
+        headwinds.append(f"fundamentals are soft at {fundamental.get('score', 0):.1f}/100")
+
+    if sentiment.get("score", 0) >= 60:
+        strengths.append(f"news sentiment is constructive at {sentiment.get('score', 0):.1f}/100")
+    elif sentiment.get("score", 0) < 45:
+        headwinds.append(f"news sentiment is unsupportive at {sentiment.get('score', 0):.1f}/100")
+
+    ml_direction = ml.get("direction", {}).get("direction", "neutral")
+    ml_confidence = float(ml.get("direction", {}).get("confidence", 0))
+    if ml.get("score", 0) >= 60 and ml_direction == "bullish":
+        strengths.append(f"the ML forecast leans bullish with {ml_confidence:.0f}% confidence")
+    elif ml.get("score", 0) < 45 or ml_direction == "bearish":
+        headwinds.append(
+            f"the ML forecast is not supportive ({ml_direction}, {ml_confidence:.0f}% confidence)"
+        )
+
+    trend = technical.get("trend", "neutral")
+    if trend == "bullish":
+        strengths.append("trend regime is currently bullish")
+    elif trend == "bearish":
+        headwinds.append("trend regime is currently bearish")
+
+    if not strengths:
+        strengths.append("there are some mixed signals, but none are strong enough to create high conviction")
+    if not headwinds:
+        headwinds.append("the setup has fewer visible weaknesses, but stronger alternatives ranked ahead")
+
+    if rank is not None and rank <= 3:
+        status = "Recommended"
+        verdict = f"{pick['symbol']} is currently a top-3 candidate in this run."
+    elif final_score >= 60:
+        status = "Watchlist"
+        verdict = (
+            f"{pick['symbol']} has some constructive signals, but it did not make the top 3."
+        )
+    else:
+        status = "Not Recommended"
+        verdict = (
+            f"{pick['symbol']} is not currently recommended because the combined signal stack is weaker than the alternatives."
+        )
+
+    rank_text = "N/A"
+    if rank is not None and total_assets is not None:
+        rank_text = f"{rank}/{total_assets}"
+        if rank > 3 and status != "Recommended":
+            verdict += f" It is currently ranked {rank_text}."
+
+    return {
+        "status": status,
+        "verdict": verdict,
+        "strengths": strengths[:3],
+        "headwinds": headwinds[:4],
+        "rank_text": rank_text,
+        "final_score": final_score,
+    }
+
+
+def render_asset_review_summary(review: dict):
+    """Render a quick recommendation summary for the selected asset."""
+    tone_map = {"Recommended": "bullish", "Watchlist": "neutral", "Not Recommended": "bearish"}
+    tone = tone_map.get(review["status"], "neutral")
+    st.markdown(
+        f"### Recommendation {tone_badge(review['status'].upper(), tone)}",
+        unsafe_allow_html=True,
+    )
+    st.markdown(review["verdict"])
+    cols = st.columns(2)
+    with cols[0]:
+        st.markdown("**What is working**")
+        for item in review["strengths"]:
+            st.caption(f"+ {item}")
+    with cols[1]:
+        st.markdown("**What is holding it back**")
+        for item in review["headwinds"]:
+            st.caption(f"- {item}")
+
+
+def generate_transparency_report(
+    pick: dict,
+    risk_level: str,
+    rank: int | None = None,
+    total_assets: int | None = None,
+) -> str:
     """Generate a detailed transparency report for a single asset."""
     symbol = pick["symbol"]
     current_price = float(pick["current_price"])
@@ -796,6 +898,7 @@ def generate_transparency_report(pick: dict, risk_level: str) -> str:
     final = pick.get("final", {})
     ohlcv = pick.get("ohlcv", pd.DataFrame())
     levels = compute_levels(current_price, technical, ml, risk_level)
+    review = build_asset_review(pick, rank=rank, total_assets=total_assets)
 
     daily_vol = 0.0
     if not ohlcv.empty:
@@ -813,6 +916,8 @@ def generate_transparency_report(pick: dict, risk_level: str) -> str:
         f"- Risk profile: {risk_level}",
         f"- Current price: {format_price(current_price)}",
         f"- Final score: {final.get('final_score', 0):.1f}/100",
+        f"- Recommendation status: {review['status']}",
+        f"- Rank in universe: {review['rank_text']}",
         "",
         "## Data Sources",
         "- OHLCV / price history: Yahoo Finance via yfinance",
@@ -896,6 +1001,18 @@ def generate_transparency_report(pick: dict, risk_level: str) -> str:
 
     lines.extend([
         "",
+        "## Recommendation Verdict",
+        f"- Summary: {review['verdict']}",
+        "- What is working:",
+    ])
+    for item in review["strengths"]:
+        lines.append(f"  - {item}")
+    lines.append("- What is holding it back:")
+    for item in review["headwinds"]:
+        lines.append(f"  - {item}")
+
+    lines.extend([
+        "",
         "## Trade Levels And Why They Were Chosen",
         f"- Entry price: {format_price(levels['entry_price'])}",
         f"- Stop-loss: {format_price(levels['stop_loss'])}",
@@ -915,10 +1032,20 @@ def generate_transparency_report(pick: dict, risk_level: str) -> str:
     return "\n".join(lines)
 
 
-def render_transparency_report(pick: dict, risk_level: str, key_prefix: str):
+def render_transparency_report(
+    pick: dict,
+    risk_level: str,
+    key_prefix: str,
+    rank: int | None = None,
+    total_assets: int | None = None,
+):
     """Render an openable transparency report plus download link for a given asset."""
-    report = generate_transparency_report(pick, risk_level)
-    with st.expander("Transparency Report"):
+    report = generate_transparency_report(pick, risk_level, rank=rank, total_assets=total_assets)
+    expand_report = (
+        st.session_state.get("report_focus_symbol") == pick["symbol"]
+        and key_prefix.startswith("detail-")
+    )
+    with st.expander("Transparency & Review Report", expanded=expand_report):
         st.markdown(report)
         st.download_button(
             "Download Report",
@@ -1020,6 +1147,11 @@ def sentiment_label(sentiment: dict) -> str:
     return "Balanced"
 
 
+def build_asset_report_href(symbol: str) -> str:
+    """Build a deep link that opens the selected asset report."""
+    return f"?asset={quote(symbol)}&focus=report"
+
+
 def render_rankings_table(all_results: dict) -> str | None:
     """Render an interactive rankings table with score bars and sparklines."""
     rows = []
@@ -1031,6 +1163,7 @@ def render_rankings_table(all_results: dict) -> str | None:
         rows.append({
             "Rank": len(rows) + 1,
             "Symbol": data["symbol"],
+            "Report": build_asset_report_href(data["symbol"]),
             "Price": float(data["current_price"]),
             "Trend": trend_label(data["technical"]["trend"]),
             "Technical": float(data["technical"]["score"]),
@@ -1052,6 +1185,7 @@ def render_rankings_table(all_results: dict) -> str | None:
         column_config={
             "Rank": st.column_config.NumberColumn("Rank", format="%d", width="small"),
             "Symbol": st.column_config.TextColumn("Asset", width="small"),
+            "Report": st.column_config.LinkColumn("Report", display_text="Open report", width="small"),
             "Price": st.column_config.NumberColumn("Price", format="$%.4f"),
             "Trend": st.column_config.TextColumn("Trend", width="small"),
             "Technical": st.column_config.ProgressColumn("Technical", min_value=0, max_value=100, format="%.0f"),
@@ -1074,7 +1208,12 @@ def render_rankings_table(all_results: dict) -> str | None:
     return None
 
 
-def render_asset_detail_panel(pick: dict, risk_level: str):
+def render_asset_detail_panel(
+    pick: dict,
+    risk_level: str,
+    rank: int | None = None,
+    total_assets: int | None = None,
+):
     """Render a focused detail panel for a selected asset."""
     symbol = pick["symbol"]
     current_price = pick["current_price"]
@@ -1105,6 +1244,7 @@ def render_asset_detail_panel(pick: dict, risk_level: str):
         unsafe_allow_html=True,
     )
 
+    render_asset_review_summary(build_asset_review(pick, rank=rank, total_assets=total_assets))
     render_signal_strip(levels, leverage_info, ml)
     a, b, c, d = st.columns(4)
     a.metric("Current Price", format_price(current_price))
@@ -1119,7 +1259,13 @@ def render_asset_detail_panel(pick: dict, risk_level: str):
         else:
             st.info("No chart data available.")
 
-    render_transparency_report(pick, risk_level, f"detail-{symbol}")
+    render_transparency_report(
+        pick,
+        risk_level,
+        f"detail-{symbol}",
+        rank=rank,
+        total_assets=total_assets,
+    )
 
 
 def render_sidebar_portfolio(top_picks: list[dict], risk_level: str):
@@ -1154,12 +1300,23 @@ def render_sidebar_portfolio(top_picks: list[dict], risk_level: str):
 def ensure_ui_state():
     """Initialize UI-related session state."""
     st.session_state.setdefault("selected_symbol", None)
+    st.session_state.setdefault("report_focus_symbol", None)
     st.session_state.setdefault("watchlist", [])
 
 
 def set_selected_symbol(symbol: str | None):
     """Persist the currently focused asset."""
     st.session_state["selected_symbol"] = symbol
+
+
+def hydrate_selection_from_query_params():
+    """Hydrate selected asset and report focus from query parameters."""
+    asset = st.query_params.get("asset")
+    focus = st.query_params.get("focus")
+    if asset:
+        set_selected_symbol(str(asset))
+        if focus == "report":
+            st.session_state["report_focus_symbol"] = str(asset)
 
 
 def add_to_watchlist(symbol: str):
@@ -1197,6 +1354,8 @@ def render_live_runboard(all_results: dict, total_assets: int, risk_level: str, 
     c6.metric("Risk Profile", risk_level.capitalize())
 
     if all_results:
+        ranked_assets = rank_assets(all_results, top_n=len(all_results))
+        rank_lookup = {item["symbol"]: idx + 1 for idx, item in enumerate(ranked_assets)}
         latest_pick = None
         if latest_symbol:
             for cid, data in all_results.items():
@@ -1204,10 +1363,15 @@ def render_live_runboard(all_results: dict, total_assets: int, risk_level: str, 
                     latest_pick = {"coin_id": cid, **data}
                     break
         if latest_pick is None:
-            latest_pick = rank_assets(all_results, top_n=1)[0]
+            latest_pick = ranked_assets[0]
 
         st.markdown("### Latest Completed Asset")
-        render_asset_detail_panel(latest_pick, risk_level)
+        render_asset_detail_panel(
+            latest_pick,
+            risk_level,
+            rank=rank_lookup.get(latest_pick["symbol"]),
+            total_assets=len(all_results),
+        )
 
         st.markdown("### Rolling Rankings")
         render_rankings_table(all_results)
@@ -1300,11 +1464,17 @@ def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str
     if chosen_symbol != st.session_state.get("selected_symbol"):
         set_selected_symbol(chosen_symbol)
     symbol_map = {data["symbol"]: {"coin_id": cid, **data} for cid, data in all_results.items()}
+    rank_lookup = {symbol: idx + 1 for idx, symbol in enumerate(symbols)}
     if chosen_symbol in symbol_map:
         top_cols = st.columns([0.76, 0.24])
         if top_cols[1].button(f"Add {chosen_symbol} to watchlist", key=f"watch-{chosen_symbol}", use_container_width=True):
             add_to_watchlist(chosen_symbol)
-        render_asset_detail_panel(symbol_map[chosen_symbol], risk_level)
+        render_asset_detail_panel(
+            symbol_map[chosen_symbol],
+            risk_level,
+            rank=rank_lookup.get(chosen_symbol),
+            total_assets=len(all_results),
+        )
 
     st.divider()
 
@@ -1339,6 +1509,9 @@ def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str
             st.metric("Technical", f"{data['technical']['score']:.0f}")
             st.metric("Fundamental", f"{data['fundamental']['score']:.0f}")
             st.metric("ML", f"{data['ml_forecast']['score']:.0f}")
+            if st.button("Review Asset", key=f"universe-open-{data['symbol']}", use_container_width=True):
+                set_selected_symbol(data["symbol"])
+                st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -1489,6 +1662,8 @@ def display_results(all_results: dict, risk_level: str):
     # Top picks
     top_picks = rank_assets(all_results, top_n=3)
     symbol_map = {data["symbol"]: {"coin_id": cid, **data} for cid, data in all_results.items()}
+    ranked_assets = rank_assets(all_results, top_n=len(all_results))
+    rank_lookup = {item["symbol"]: idx + 1 for idx, item in enumerate(ranked_assets)}
     selected_symbol = st.session_state.get("selected_symbol")
     if selected_symbol not in symbol_map and top_picks:
         selected_symbol = top_picks[0]["symbol"]
@@ -1512,7 +1687,12 @@ def display_results(all_results: dict, risk_level: str):
                 use_container_width=True,
             ):
                 add_to_watchlist(selected_symbol)
-            render_asset_detail_panel(symbol_map[selected_symbol], risk_level)
+            render_asset_detail_panel(
+                symbol_map[selected_symbol],
+                risk_level,
+                rank=rank_lookup.get(selected_symbol),
+                total_assets=len(all_results),
+            )
 
     with picks_tab:
         st.markdown('<div class="section-kicker">Conviction Board</div>', unsafe_allow_html=True)
@@ -1598,7 +1778,13 @@ def display_results(all_results: dict, risk_level: str):
                 else:
                     st.info("No chart data available.")
 
-            render_transparency_report(pick, risk_level, f"pick-{rank_num}-{symbol}")
+            render_transparency_report(
+                pick,
+                risk_level,
+                f"pick-{rank_num}-{symbol}",
+                rank=rank_num,
+                total_assets=len(all_results),
+            )
 
             st.divider()
 
@@ -1608,6 +1794,7 @@ def display_results(all_results: dict, risk_level: str):
 
 # ── App Entry Point ──────────────────────────────────────────────────────────
 ensure_ui_state()
+hydrate_selection_from_query_params()
 render_hero()
 render_resume_status_card(risk_level)
 
