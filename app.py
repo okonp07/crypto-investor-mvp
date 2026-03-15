@@ -34,6 +34,8 @@ from utils.helpers import get_logger
 
 log = get_logger("app")
 CHECKPOINT_PATH = Path(__file__).with_name(".talentpoint_run_checkpoint.pkl")
+LATEST_RESULTS_PATH = Path(__file__).with_name(".talentpoint_latest_results.pkl")
+RISK_OPTIONS = ["conservative", "moderate", "aggressive"]
 
 
 def load_run_checkpoint() -> dict | None:
@@ -57,6 +59,30 @@ def save_run_checkpoint(risk_level: str, next_index: int, results: dict):
         "saved_at": datetime.utcnow().isoformat(),
     }
     with CHECKPOINT_PATH.open("wb") as fh:
+        pickle.dump(payload, fh)
+    save_latest_results(risk_level, results)
+
+
+def load_latest_results() -> dict | None:
+    """Load the latest saved results snapshot, if available."""
+    if not LATEST_RESULTS_PATH.exists():
+        return None
+    try:
+        with LATEST_RESULTS_PATH.open("rb") as fh:
+            return pickle.load(fh)
+    except Exception as exc:
+        log.warning("Failed to load latest results snapshot: %s", exc)
+        return None
+
+
+def save_latest_results(risk_level: str, results: dict):
+    """Persist the latest results so deep links can reopen reports."""
+    payload = {
+        "risk_level": risk_level,
+        "results": results,
+        "saved_at": datetime.utcnow().isoformat(),
+    }
+    with LATEST_RESULTS_PATH.open("wb") as fh:
         pickle.dump(payload, fh)
 
 
@@ -86,6 +112,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+query_risk_level = str(st.query_params.get("risk", "moderate")).lower()
+if query_risk_level not in RISK_OPTIONS:
+    query_risk_level = "moderate"
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -534,8 +564,8 @@ with st.sidebar:
     st.divider()
     risk_level = st.radio(
         "Risk Tolerance",
-        ["conservative", "moderate", "aggressive"],
-        index=1,
+        RISK_OPTIONS,
+        index=RISK_OPTIONS.index(query_risk_level),
         format_func=lambda x: x.capitalize(),
         help="Determines leverage, stop-loss width, and ranking bias.",
     )
@@ -1147,12 +1177,12 @@ def sentiment_label(sentiment: dict) -> str:
     return "Balanced"
 
 
-def build_asset_report_href(symbol: str) -> str:
+def build_asset_report_href(symbol: str, risk_level: str) -> str:
     """Build a deep link that opens the selected asset report."""
-    return f"?asset={quote(symbol)}&focus=report"
+    return f"?asset={quote(symbol)}&focus=report&risk={quote(risk_level)}"
 
 
-def render_rankings_table(all_results: dict) -> str | None:
+def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
     """Render an interactive rankings table with score bars and sparklines."""
     rows = []
     for cid, data in sorted(
@@ -1163,7 +1193,7 @@ def render_rankings_table(all_results: dict) -> str | None:
         rows.append({
             "Rank": len(rows) + 1,
             "Symbol": data["symbol"],
-            "Report": build_asset_report_href(data["symbol"]),
+            "Report": build_asset_report_href(data["symbol"], risk_level),
             "Price": float(data["current_price"]),
             "Trend": trend_label(data["technical"]["trend"]),
             "Technical": float(data["technical"]["score"]),
@@ -1319,6 +1349,27 @@ def hydrate_selection_from_query_params():
             st.session_state["report_focus_symbol"] = str(asset)
 
 
+def bootstrap_results_for_deep_link(risk_level: str):
+    """Restore saved results when a deep-linked asset report is requested."""
+    if "results" in st.session_state:
+        return
+
+    requested_asset = st.session_state.get("selected_symbol")
+    if not requested_asset:
+        return
+
+    checkpoint = get_resume_state(risk_level)
+    if checkpoint and requested_asset in {data.get("symbol") for data in checkpoint.get("results", {}).values()}:
+        st.session_state["results"] = checkpoint["results"]
+        st.session_state["risk_level"] = checkpoint.get("risk_level", risk_level)
+        return
+
+    latest = load_latest_results()
+    if latest and requested_asset in {data.get("symbol") for data in latest.get("results", {}).values()}:
+        st.session_state["results"] = latest["results"]
+        st.session_state["risk_level"] = latest.get("risk_level", risk_level)
+
+
 def add_to_watchlist(symbol: str):
     """Add an asset to the watchlist if it is not already present."""
     watchlist = st.session_state.setdefault("watchlist", [])
@@ -1374,7 +1425,7 @@ def render_live_runboard(all_results: dict, total_assets: int, risk_level: str, 
         )
 
         st.markdown("### Rolling Rankings")
-        render_rankings_table(all_results)
+        render_rankings_table(all_results, risk_level)
 
 
 def render_resume_status_card(risk_level: str):
@@ -1675,7 +1726,7 @@ def display_results(all_results: dict, risk_level: str):
         render_health_check(all_results)
         st.markdown('<div class="section-kicker">Live Rankings</div>', unsafe_allow_html=True)
         st.header("Full Asset Rankings")
-        newly_selected_symbol = render_rankings_table(all_results)
+        newly_selected_symbol = render_rankings_table(all_results, risk_level)
         if newly_selected_symbol:
             selected_symbol = newly_selected_symbol
             set_selected_symbol(selected_symbol)
@@ -1795,6 +1846,7 @@ def display_results(all_results: dict, risk_level: str):
 # ── App Entry Point ──────────────────────────────────────────────────────────
 ensure_ui_state()
 hydrate_selection_from_query_params()
+bootstrap_results_for_deep_link(risk_level)
 render_hero()
 render_resume_status_card(risk_level)
 
