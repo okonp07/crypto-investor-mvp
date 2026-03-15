@@ -1073,7 +1073,7 @@ def render_transparency_report(
     report = generate_transparency_report(pick, risk_level, rank=rank, total_assets=total_assets)
     expand_report = (
         st.session_state.get("report_focus_symbol") == pick["symbol"]
-        and key_prefix.startswith("detail-")
+        and "detail" in key_prefix
     )
     with st.expander("Transparency & Review Report", expanded=expand_report):
         st.markdown(report)
@@ -1275,6 +1275,14 @@ def render_asset_detail_panel(
         unsafe_allow_html=True,
     )
 
+    render_transparency_report(
+        pick,
+        risk_level,
+        f"{panel_key_prefix}-{symbol}",
+        rank=rank,
+        total_assets=total_assets,
+    )
+
     render_asset_review_summary(build_asset_review(pick, rank=rank, total_assets=total_assets))
     render_signal_strip(levels, leverage_info, ml)
     a, b, c, d = st.columns(4)
@@ -1293,14 +1301,6 @@ def render_asset_detail_panel(
             )
         else:
             st.info("No chart data available.")
-
-    render_transparency_report(
-        pick,
-        risk_level,
-        f"{panel_key_prefix}-{symbol}",
-        rank=rank,
-        total_assets=total_assets,
-    )
 
 
 def render_sidebar_portfolio(top_picks: list[dict], risk_level: str):
