@@ -1387,11 +1387,21 @@ def remove_from_watchlist(symbol: str):
     watchlist = st.session_state.setdefault("watchlist", [])
     st.session_state["watchlist"] = [item for item in watchlist if item != symbol]
 
-def render_live_runboard(all_results: dict, total_assets: int, risk_level: str, latest_symbol: str | None = None, resumed: bool = False):
+def render_live_runboard(
+    all_results: dict,
+    total_assets: int,
+    risk_level: str,
+    latest_symbol: str | None = None,
+    resumed: bool = False,
+    processed_count: int | None = None,
+):
     """Render live partial results while a scan is still running."""
     st.markdown('<div class="section-kicker">Live Runboard</div>', unsafe_allow_html=True)
     st.subheader("Partial results are available while the scan continues.")
 
+    ranked_count = len(all_results)
+    processed = processed_count if processed_count is not None else ranked_count
+    skipped_count = max(processed - ranked_count, 0)
     current_leader = "--"
     avg_score = 0.0
     if all_results:
@@ -1400,14 +1410,19 @@ def render_live_runboard(all_results: dict, total_assets: int, risk_level: str, 
         avg_score = float(np.mean([r["final"]["final_score"] for r in all_results.values()]))
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Completed", f"{len(all_results)}/{total_assets}")
+    c1.metric("Processed", f"{processed}/{total_assets}")
     c2.metric("Current Leader", current_leader)
-    c3.metric("Latest Asset", latest_symbol or "--")
+    c3.metric("Latest Attempt", latest_symbol or "--")
     c4.metric("Mode", "Resume" if resumed else "Fresh")
 
-    c5, c6 = st.columns(2)
-    c5.metric("Avg Score So Far", f"{avg_score:.1f}")
-    c6.metric("Risk Profile", risk_level.capitalize())
+    c5, c6, c7 = st.columns(3)
+    c5.metric("Ranked", f"{ranked_count}")
+    c6.metric("Skipped / Failed", f"{skipped_count}")
+    c7.metric("Avg Score So Far", f"{avg_score:.1f}")
+
+    st.caption(
+        "Processed assets include attempts that were skipped or failed. Rolling rankings only include assets with a completed analysis."
+    )
 
     if all_results:
         ranked_assets = rank_assets(all_results, top_n=len(all_results))
@@ -1600,6 +1615,7 @@ def run_analysis(risk_level: str) -> dict:
                 risk_level,
                 latest_symbol=None,
                 resumed=resumed,
+                processed_count=next_index,
             )
 
     assets = list(ASSET_UNIVERSE.items())
@@ -1688,6 +1704,7 @@ def run_analysis(risk_level: str) -> dict:
                     risk_level,
                     latest_symbol=symbol,
                     resumed=resumed,
+                    processed_count=idx + 1,
                 )
 
     progress.progress(100, text="Analysis complete!")
