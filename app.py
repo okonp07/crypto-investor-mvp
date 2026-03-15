@@ -1,12 +1,14 @@
 """
-Crypto Investor MVP — Streamlit Frontend
+TalentPoint — Streamlit Frontend
 Quant-assisted crypto investment decision-support tool.
 
 Run:  streamlit run app.py
 """
 import sys
 import os
+import pickle
 from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
 import pandas as pd
@@ -30,11 +32,56 @@ from strategy.risk import compute_leverage
 from utils.helpers import get_logger
 
 log = get_logger("app")
+CHECKPOINT_PATH = Path(__file__).with_name(".talentpoint_run_checkpoint.pkl")
+
+
+def load_run_checkpoint() -> dict | None:
+    """Load persisted run state from disk if it exists."""
+    if not CHECKPOINT_PATH.exists():
+        return None
+    try:
+        with CHECKPOINT_PATH.open("rb") as fh:
+            return pickle.load(fh)
+    except Exception as exc:
+        log.warning("Failed to load run checkpoint: %s", exc)
+        return None
+
+
+def save_run_checkpoint(risk_level: str, next_index: int, results: dict):
+    """Persist run state after each processed asset."""
+    payload = {
+        "risk_level": risk_level,
+        "next_index": next_index,
+        "results": results,
+        "saved_at": datetime.utcnow().isoformat(),
+    }
+    with CHECKPOINT_PATH.open("wb") as fh:
+        pickle.dump(payload, fh)
+
+
+def clear_run_checkpoint():
+    """Delete any persisted run checkpoint."""
+    if CHECKPOINT_PATH.exists():
+        CHECKPOINT_PATH.unlink()
+
+
+def get_resume_state(risk_level: str) -> dict | None:
+    """Return resume metadata when an unfinished checkpoint matches the selected risk profile."""
+    payload = load_run_checkpoint()
+    if not payload:
+        return None
+    if payload.get("risk_level") != risk_level:
+        return None
+    next_index = int(payload.get("next_index", 0))
+    total_assets = len(ASSET_UNIVERSE)
+    if next_index <= 0 or next_index >= total_assets:
+        return None
+    return payload
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Crypto Investor MVP",
-    page_icon="$",
+    page_title="TalentPoint",
+    page_icon="TP",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -116,6 +163,54 @@ st.markdown("""
         letter-spacing: 0.18em;
         color: #fbbf24;
         margin-bottom: 0.85rem;
+    }
+
+    .brand-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(249, 115, 22, 0.95));
+        color: #08111f;
+        font-family: "Space Grotesk", sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        box-shadow: 0 14px 28px rgba(8, 17, 31, 0.22);
+    }
+
+    .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        margin-bottom: 0.95rem;
+    }
+
+    .brand-wordmark {
+        display: flex;
+        align-items: baseline;
+        gap: 0.2rem;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 2.8rem;
+        line-height: 0.95;
+        letter-spacing: -0.05em;
+    }
+
+    .brand-wordmark .talent {
+        color: #f8fafc;
+        font-weight: 500;
+    }
+
+    .brand-wordmark .point {
+        color: #f97316;
+        font-weight: 700;
+    }
+
+    .brand-wordmark .dot {
+        color: #38bdf8;
+        font-weight: 700;
+        margin: 0 0.04em;
     }
 
     .hero-title {
@@ -392,6 +487,24 @@ st.markdown("""
         margin-bottom: 0.9rem;
     }
 
+    .status-card {
+        padding: 1rem 1.1rem;
+        margin: 0.75rem 0 1rem 0;
+        border-radius: 20px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(10, 22, 39, 0.72);
+    }
+
+    .status-card.resume {
+        border-color: rgba(56, 189, 248, 0.28);
+        box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.05);
+    }
+
+    .status-card.fresh {
+        border-color: rgba(249, 115, 22, 0.24);
+        box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.05);
+    }
+
     @media (max-width: 900px) {
         .hero-title { font-size: 2.35rem; }
         .micro-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -401,7 +514,19 @@ st.markdown("""
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("Crypto Investor MVP")
+    st.markdown(
+        """
+        <div class="brand-lockup" style="margin-bottom:0.55rem;">
+            <div class="brand-mark">TP</div>
+            <div>
+                <div class="brand-wordmark" style="font-size:1.6rem; margin:0;">
+                    <span class="talent">Talent</span><span class="dot">•</span><span class="point">Point</span>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.caption("Quant-assisted crypto analysis tool")
     st.caption("Market data: CoinPaprika + Yahoo Finance")
 
@@ -424,7 +549,15 @@ with st.sidebar:
         st.caption(f"{k.replace('_', ' ').title()}: {effective:.0%}")
 
     st.divider()
-    run_btn = st.button("Run Analysis", type="primary", use_container_width=True)
+    resume_state = get_resume_state(risk_level)
+    if resume_state:
+        st.info(
+            f"Resume available: {resume_state.get('next_index', 0)}/{len(ASSET_UNIVERSE)} assets processed.",
+            icon="⏯️",
+        )
+
+    run_btn = st.button("Run / Resume Analysis", type="primary", use_container_width=True)
+    reset_run_btn = st.button("Start Fresh Run", use_container_width=True)
 
     st.divider()
     st.warning(
@@ -539,7 +672,12 @@ def render_hero():
         """
         <section class="hero-shell">
             <div class="hero-eyebrow">Crypto Intelligence Desk</div>
-            <h1 class="hero-title">Sharper crypto signals, packaged like a real dashboard.</h1>
+            <div class="brand-lockup">
+                <div class="brand-mark">TP</div>
+                <div class="brand-wordmark">
+                    <span class="talent">Talent</span><span class="dot">•</span><span class="point">Point</span>
+                </div>
+            </div>
             <p class="hero-copy">
                 Track momentum, market structure, sentiment, and machine-learning forecasts in one place.
                 The app ranks the current universe, then translates the strongest setups into entries,
@@ -878,6 +1016,85 @@ def remove_from_watchlist(symbol: str):
     watchlist = st.session_state.setdefault("watchlist", [])
     st.session_state["watchlist"] = [item for item in watchlist if item != symbol]
 
+def render_live_runboard(all_results: dict, total_assets: int, risk_level: str, latest_symbol: str | None = None, resumed: bool = False):
+    """Render live partial results while a scan is still running."""
+    st.markdown('<div class="section-kicker">Live Runboard</div>', unsafe_allow_html=True)
+    st.subheader("Partial results are available while the scan continues.")
+
+    current_leader = "--"
+    avg_score = 0.0
+    if all_results:
+        ranked = rank_assets(all_results, top_n=1)
+        current_leader = ranked[0]["symbol"] if ranked else "--"
+        avg_score = float(np.mean([r["final"]["final_score"] for r in all_results.values()]))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Completed", f"{len(all_results)}/{total_assets}")
+    c2.metric("Current Leader", current_leader)
+    c3.metric("Latest Asset", latest_symbol or "--")
+    c4.metric("Mode", "Resume" if resumed else "Fresh")
+
+    c5, c6 = st.columns(2)
+    c5.metric("Avg Score So Far", f"{avg_score:.1f}")
+    c6.metric("Risk Profile", risk_level.capitalize())
+
+    if all_results:
+        latest_pick = None
+        if latest_symbol:
+            for cid, data in all_results.items():
+                if data["symbol"] == latest_symbol:
+                    latest_pick = {"coin_id": cid, **data}
+                    break
+        if latest_pick is None:
+            latest_pick = rank_assets(all_results, top_n=1)[0]
+
+        st.markdown("### Latest Completed Asset")
+        render_asset_detail_panel(latest_pick, risk_level)
+
+        st.markdown("### Rolling Rankings")
+        render_rankings_table(all_results)
+
+
+def render_resume_status_card(risk_level: str):
+    """Render a visible checkpoint/resume status card."""
+    resume_state = get_resume_state(risk_level)
+    total_assets = len(ASSET_UNIVERSE)
+
+    if resume_state:
+        next_index = int(resume_state.get("next_index", 0))
+        completed = next_index
+        assets = list(ASSET_UNIVERSE.items())
+        next_symbol = assets[next_index][1]["symbol"] if next_index < total_assets else "--"
+        saved_at_raw = resume_state.get("saved_at")
+        saved_at = saved_at_raw.replace("T", " ")[:19] + " UTC" if saved_at_raw else "Unknown"
+        st.markdown(
+            f"""
+            <div class="status-card resume">
+                <div class="section-kicker">Resume Ready</div>
+                <strong>{completed}/{total_assets} assets already processed.</strong>
+                <p style="margin:0.55rem 0 0 0; color:#9fb0c7;">
+                    Next asset: <strong>{next_symbol}</strong><br/>
+                    Risk profile: <strong>{risk_level.capitalize()}</strong><br/>
+                    Saved checkpoint: <strong>{saved_at}</strong>
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+            <div class="status-card fresh">
+                <div class="section-kicker">Fresh Run</div>
+                <strong>No resumable checkpoint detected for the current risk profile.</strong>
+                <p style="margin:0.55rem 0 0 0; color:#9fb0c7;">
+                    The next scan will start from asset <strong>1</strong> of <strong>{total_assets}</strong>.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 
 def render_watchlist_sidebar(all_results: dict):
     """Render the current watchlist in the sidebar."""
@@ -971,6 +1188,7 @@ def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str
 def run_analysis(risk_level: str) -> dict:
     """Execute the full analysis pipeline for all assets."""
     progress = st.progress(0, text="Fetching market overview...")
+    live_placeholder = st.empty()
 
     # 1. Market overview
     try:
@@ -980,9 +1198,24 @@ def run_analysis(risk_level: str) -> dict:
         return {}
 
     total_assets = len(ASSET_UNIVERSE)
-    all_results = {}
+    checkpoint = get_resume_state(risk_level)
+    all_results = checkpoint.get("results", {}) if checkpoint else {}
+    next_index = int(checkpoint.get("next_index", 0)) if checkpoint else 0
+    resumed = checkpoint is not None
 
-    for idx, (coin_id, meta) in enumerate(ASSET_UNIVERSE.items()):
+    if all_results:
+        with live_placeholder.container():
+            render_live_runboard(
+                all_results,
+                total_assets,
+                risk_level,
+                latest_symbol=None,
+                resumed=resumed,
+            )
+
+    assets = list(ASSET_UNIVERSE.items())
+
+    for idx, (coin_id, meta) in enumerate(assets[next_index:], start=next_index):
         symbol = meta["symbol"]
         pct = int((idx + 1) / total_assets * 100)
 
@@ -1057,9 +1290,19 @@ def run_analysis(risk_level: str) -> dict:
         except Exception as e:
             log.error("Error analysing %s: %s", symbol, e, exc_info=True)
             st.toast(f"⚠️ Error on {symbol}: {e}", icon="⚠️")
-            continue
+        finally:
+            save_run_checkpoint(risk_level, idx + 1, all_results)
+            with live_placeholder.container():
+                render_live_runboard(
+                    all_results,
+                    total_assets,
+                    risk_level,
+                    latest_symbol=symbol,
+                    resumed=resumed,
+                )
 
     progress.progress(100, text="Analysis complete!")
+    clear_run_checkpoint()
     return all_results
 
 
@@ -1206,6 +1449,13 @@ def display_results(all_results: dict, risk_level: str):
 # ── App Entry Point ──────────────────────────────────────────────────────────
 ensure_ui_state()
 render_hero()
+render_resume_status_card(risk_level)
+
+if reset_run_btn:
+    clear_run_checkpoint()
+    st.session_state.pop("results", None)
+    st.session_state.pop("risk_level", None)
+    st.toast("Fresh run state cleared. The next scan will start from asset 1.", icon="♻️")
 
 if run_btn:
     with st.spinner("Running full analysis pipeline..."):
@@ -1236,6 +1486,14 @@ else:
             """
         )
         st.info("Click **Run Analysis** in the sidebar to start a fresh market scan.", icon="👈")
+
+        resume_state = get_resume_state(risk_level)
+        if resume_state:
+            st.warning(
+                f"A resumable checkpoint is available for this risk profile. "
+                f"Use **Run / Resume Analysis** to continue from asset {resume_state['next_index'] + 1}.",
+                icon="⏯️",
+            )
 
     with intro_right:
         st.markdown(

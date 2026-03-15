@@ -3,13 +3,13 @@
 ## Document Status
 
 - Status: Implemented
-- Product: Crypto Investor MVP
+- Product: TalentPoint
 - Surface: Streamlit application
 - Scope: Reliability, data-source migration, ML runtime health, and frontend usability
 
 ## Summary
 
-This update improves the Crypto Investor MVP across three areas:
+This update improves TalentPoint across three areas:
 
 1. reliability of the live analysis pipeline
 2. usability and aesthetics of the Streamlit frontend
@@ -129,4 +129,3 @@ Before this update, the app had several product and operational issues:
 - Main app entrypoint: `app.py`
 - Live app target: Streamlit Community Cloud
 - Live URL: [https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
-

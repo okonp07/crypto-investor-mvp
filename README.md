@@ -1,10 +1,10 @@
-# Crypto Investor MVP
+# TalentPoint
 
 ## Live App
 
 Use the live Streamlit app here:
 
-[Open Crypto Investor MVP](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
+[Open TalentPoint](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
 A Streamlit-based crypto research dashboard that ranks a curated asset universe using technical analysis, market-structure fundamentals, news sentiment, and machine-learning forecasts.
 
@@ -23,6 +23,8 @@ For each tracked asset, the app:
 - computes four pillar scores: technical, fundamental, sentiment, and ML
 - combines those scores into a final ranking
 - suggests entry price, stop-loss, take-profit, leverage, and risk/reward
+- checkpoints progress after each completed asset so interrupted runs can resume
+- shows partial results during the scan instead of waiting for all 15 assets to finish
 
 ## Current Product State
 
@@ -31,10 +33,13 @@ The current frontend is a polished Streamlit dashboard with:
 - a live deployment on Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 - a hero-style landing section and upgraded visual theme
 - `Overview`, `Picks`, and `Universe` tabs to reduce scroll length
+- a visible resume-status card that shows checkpoint progress, next asset, and save time
+- a live runboard that surfaces rolling rankings and latest-completed asset details during the scan
 - an interactive rankings table with progress bars and mini price-action sparklines
 - persistent asset selection across tabs
 - a one-click watchlist in the sidebar
 - a score-weighted suggested allocation panel for the current top picks
+- a health-check panel that shows whether the full pipeline and ML layer are active
 - detailed top-pick cards with chart, sentiment, rationale, and risk controls
 
 ## Data Sources
@@ -79,6 +84,18 @@ For each strong candidate, the app surfaces:
 
 These are computed from support/resistance, ATR-style logic, forecast levels, confidence, and user-selected risk tolerance.
 
+## Run Experience
+
+TalentPoint now supports a more resilient long-running scan flow:
+
+- each asset is checkpointed after completion
+- interrupted runs can resume from the next pending asset instead of restarting from asset 1
+- the app shows partial results while the 15-asset loop is still in progress
+- users can explicitly clear the checkpoint and start a fresh run
+- the UI exposes checkpoint state before a run starts
+
+This keeps the app useful even when live APIs are slow or a session is interrupted.
+
 ## Asset Universe
 
 The default universe includes:
@@ -102,7 +119,7 @@ The default universe includes:
 ## Project Structure
 
 ```text
-crypto-investor-mvp/
+talentpoint/
 ├── app.py                    # Streamlit UI and app flow
 ├── config.py                 # Asset universe, weights, risk profiles, API settings
 ├── data/
@@ -122,6 +139,7 @@ crypto-investor-mvp/
 │   └── helpers.py            # Logging, retries, normalization helpers
 ├── requirements.txt
 ├── ARTICLE.md
+├── PRD_UI_AND_RELIABILITY_UPDATE.md
 └── README.md
 ```
 
@@ -164,6 +182,7 @@ Notes:
 - The app is designed to run from Streamlit, not as a static site.
 - First load may take longer because it fetches live data.
 - In-process caching helps repeated reruns within the same session.
+- interrupted runs can resume from a saved checkpoint for the same risk profile
 
 ## Limitations
 
@@ -172,6 +191,7 @@ Notes:
 - ML is intentionally lightweight and transparent, not institutional-grade forecasting
 - There is no brokerage integration or automatic trade execution
 - There is no historical backtesting module yet
+- resume state is stored locally per app instance, so deployment environments should be tested for persistence expectations
 
 ## Recent Improvements
 
@@ -180,6 +200,8 @@ Notes:
 - added market-data and RSS caching to reduce repeated network cost
 - repaired the local XGBoost runtime and graceful fallback path
 - redesigned the Streamlit UI with tabs, sparklines, watchlist, and allocation guidance
+- added resumable scan checkpoints and live partial-results rendering during long runs
+- added a visible pipeline health-check section and resume-status card
 - deployed the app to Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
 ## Tech Stack
