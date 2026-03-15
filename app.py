@@ -1223,6 +1223,11 @@ def build_asset_report_href(symbol: str, risk_level: str) -> str:
     return f"?asset={quote(symbol)}&focus=report&risk={quote(risk_level)}"
 
 
+def rankings_recommendation(review: dict) -> str:
+    """Collapse review status into a binary ranking recommendation label."""
+    return "Recommended" if review.get("status") == "Recommended" else "Not Recommended"
+
+
 def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
     """Render an interactive rankings table with score bars and sparklines."""
     rows = []
@@ -1231,9 +1236,12 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
         key=lambda x: x[1]["final"]["final_score"],
         reverse=True,
     ):
+        rank = len(rows) + 1
+        review = build_asset_review({"coin_id": cid, **data}, rank=rank, total_assets=len(all_results))
         rows.append({
-            "Rank": len(rows) + 1,
+            "Rank": rank,
             "Symbol": data["symbol"],
+            "Recommendation": rankings_recommendation(review),
             "Report": build_asset_report_href(data["symbol"], risk_level),
             "Price": float(data["current_price"]),
             "Trend": trend_label(data["technical"]["trend"]),
@@ -1247,8 +1255,16 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
         })
 
     ranking_df = pd.DataFrame(rows)
+    ranking_styler = ranking_df.style.map(
+        lambda value: (
+            "color: #86efac; font-weight: 700;"
+            if value == "Recommended"
+            else "color: #fda4af; font-weight: 700;"
+        ),
+        subset=["Recommendation"],
+    )
     event = st.dataframe(
-        ranking_df,
+        ranking_styler,
         use_container_width=True,
         hide_index=True,
         on_select="rerun",
@@ -1256,6 +1272,7 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
         column_config={
             "Rank": st.column_config.NumberColumn("Rank", format="%d", width="small"),
             "Symbol": st.column_config.TextColumn("Asset", width="small"),
+            "Recommendation": st.column_config.TextColumn("Recommendation", width="medium"),
             "Report": st.column_config.LinkColumn("Report", display_text="Open report", width="small"),
             "Price": st.column_config.NumberColumn("Price", format="$%.4f"),
             "Trend": st.column_config.TextColumn("Trend", width="small"),
