@@ -21,7 +21,8 @@ from plotly.subplots import make_subplots
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import ASSET_UNIVERSE, SCORING_WEIGHTS, RISK_PROFILES
+from backtesting.service import list_backtest_assets, run_historical_backtest
+from config import ASSET_UNIVERSE, SCORING_WEIGHTS, RISK_PROFILES, TRADING_MODES
 from data.market_data import fetch_market_overview, fetch_ohlcv, fetch_all_asset_data
 from data.news_data import fetch_news
 from analysis.technical import score_technical, compute_indicators
@@ -37,6 +38,7 @@ log = get_logger("app")
 CHECKPOINT_PATH = Path(__file__).with_name(".talentpoint_run_checkpoint.pkl")
 LATEST_RESULTS_PATH = Path(__file__).with_name(".talentpoint_latest_results.pkl")
 RISK_OPTIONS = ["conservative", "moderate", "aggressive"]
+TRADING_MODE_OPTIONS = list(TRADING_MODES.keys())
 
 
 def load_run_checkpoint() -> dict | None:
@@ -51,17 +53,18 @@ def load_run_checkpoint() -> dict | None:
         return None
 
 
-def save_run_checkpoint(risk_level: str, next_index: int, results: dict):
+def save_run_checkpoint(risk_level: str, trading_mode: str, next_index: int, results: dict):
     """Persist run state after each processed asset."""
     payload = {
         "risk_level": risk_level,
+        "trading_mode": trading_mode,
         "next_index": next_index,
         "results": results,
         "saved_at": datetime.utcnow().isoformat(),
     }
     with CHECKPOINT_PATH.open("wb") as fh:
         pickle.dump(payload, fh)
-    save_latest_results(risk_level, results)
+    save_latest_results(risk_level, trading_mode, results)
 
 
 def load_latest_results() -> dict | None:
@@ -76,10 +79,11 @@ def load_latest_results() -> dict | None:
         return None
 
 
-def save_latest_results(risk_level: str, results: dict):
+def save_latest_results(risk_level: str, trading_mode: str, results: dict):
     """Persist the latest results so deep links can reopen reports."""
     payload = {
         "risk_level": risk_level,
+        "trading_mode": trading_mode,
         "results": results,
         "saved_at": datetime.utcnow().isoformat(),
     }
@@ -93,12 +97,14 @@ def clear_run_checkpoint():
         CHECKPOINT_PATH.unlink()
 
 
-def get_resume_state(risk_level: str) -> dict | None:
-    """Return resume metadata when an unfinished checkpoint matches the selected risk profile."""
+def get_resume_state(risk_level: str, trading_mode: str) -> dict | None:
+    """Return resume metadata when an unfinished checkpoint matches the active mode/profile."""
     payload = load_run_checkpoint()
     if not payload:
         return None
     if payload.get("risk_level") != risk_level:
+        return None
+    if payload.get("trading_mode", "swing") != trading_mode:
         return None
     next_index = int(payload.get("next_index", 0))
     total_assets = len(ASSET_UNIVERSE)
@@ -122,6 +128,9 @@ st.set_page_config(
 query_risk_level = str(st.query_params.get("risk", "moderate")).lower()
 if query_risk_level not in RISK_OPTIONS:
     query_risk_level = "moderate"
+query_trading_mode = str(st.query_params.get("mode", "swing")).lower()
+if query_trading_mode not in TRADING_MODE_OPTIONS:
+    query_trading_mode = "swing"
 st.session_state.setdefault("analysis_running", False)
 button_accent = "#22c55e" if st.session_state.get("analysis_running") else "#38bdf8"
 button_accent_soft = "#16a34a" if st.session_state.get("analysis_running") else "#2563eb"
@@ -614,6 +623,20 @@ with st.sidebar:
     profile = RISK_PROFILES[risk_level]
     st.info(profile["description"])
 
+    trading_mode = st.radio(
+        "Trading Mode",
+        TRADING_MODE_OPTIONS,
+        index=TRADING_MODE_OPTIONS.index(query_trading_mode),
+        format_func=lambda key: f"{TRADING_MODES[key]['label']} ({TRADING_MODES[key]['holding_period_label']})",
+        help="Controls the bar interval, forecast horizon, and backtesting profile.",
+    )
+    mode_profile = TRADING_MODES[trading_mode]
+    st.caption(mode_profile["description"])
+    st.caption(
+        f"Data interval: `{mode_profile['yfinance_interval']}` | "
+        f"Forecast horizon: `{mode_profile['forecast_horizon_bars']}` bars"
+    )
+
     st.divider()
     st.markdown("**Scoring Weights**")
     for k, v in SCORING_WEIGHTS.items():
@@ -622,7 +645,7 @@ with st.sidebar:
         st.caption(f"{k.replace('_', ' ').title()}: {effective:.0%}")
 
     st.divider()
-    resume_state = get_resume_state(risk_level)
+    resume_state = get_resume_state(risk_level, trading_mode)
     if resume_state:
         st.info(
             f"Resume available: {resume_state.get('next_index', 0)}/{len(ASSET_UNIVERSE)} assets processed.",
@@ -648,7 +671,12 @@ with st.sidebar:
 
 
 # ── Helper: Build price chart ────────────────────────────────────────────────
-def build_price_chart(df: pd.DataFrame, symbol: str, forecast_prices: list = None) -> go.Figure:
+def build_price_chart(
+    df: pd.DataFrame,
+    symbol: str,
+    forecast_prices: list = None,
+    trading_mode: str = "swing",
+) -> go.Figure:
     """Create an OHLC chart with indicators and optional forecast overlay."""
     df = df.copy().tail(90)  # last 90 days for readability
 
@@ -693,8 +721,14 @@ def build_price_chart(df: pd.DataFrame, symbol: str, forecast_prices: list = Non
     # Forecast overlay
     if forecast_prices:
         last_date = df.index[-1]
-        forecast_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
-                                       periods=len(forecast_prices), freq="D")
+        interval = TRADING_MODES.get(trading_mode, TRADING_MODES["swing"])["yfinance_interval"]
+        freq_map = {"1d": "D", "1h": "H", "15m": "15min"}
+        freq = freq_map.get(interval, "D")
+        forecast_dates = pd.date_range(
+            start=last_date + pd.tseries.frequencies.to_offset(freq),
+            periods=len(forecast_prices),
+            freq=freq,
+        )
         fig.add_trace(go.Scatter(
             x=forecast_dates, y=forecast_prices, name="Forecast",
             line=dict(color="#a78bfa", width=2, dash="dash"),
@@ -962,6 +996,7 @@ def render_asset_review_summary(review: dict):
 def generate_transparency_report(
     pick: dict,
     risk_level: str,
+    trading_mode: str,
     rank: int | None = None,
     total_assets: int | None = None,
 ) -> str:
@@ -974,7 +1009,7 @@ def generate_transparency_report(
     ml = pick.get("ml_forecast", {})
     final = pick.get("final", {})
     ohlcv = pick.get("ohlcv", pd.DataFrame())
-    levels = compute_levels(current_price, technical, ml, risk_level)
+    levels = compute_levels(current_price, technical, ml, risk_level, trading_mode)
     review = build_asset_review(pick, rank=rank, total_assets=total_assets)
 
     daily_vol = 0.0
@@ -991,6 +1026,7 @@ def generate_transparency_report(
         "",
         f"- Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
         f"- Risk profile: {risk_level}",
+        f"- Trading mode: {trading_mode} ({TRADING_MODES[trading_mode]['holding_period_label']})",
         f"- Current price: {format_price(current_price)}",
         f"- Final score: {final.get('final_score', 0):.1f}/100",
         f"- Recommendation status: {review['status']}",
@@ -999,7 +1035,7 @@ def generate_transparency_report(
         "## Data Sources",
         "- OHLCV / price history: Yahoo Finance via yfinance",
         "- Market metadata: CoinPaprika",
-        "- News sentiment: RSS feeds plus optional CryptoPanic",
+        "- News sentiment: editorial RSS, crypto community feeds, market-mood context, plus optional CryptoPanic",
         "- Developer activity: GitHub API where repository metadata is configured",
         "",
         "## Final Score Composition",
@@ -1047,11 +1083,17 @@ def generate_transparency_report(
         f"- Sentiment score: {sentiment.get('score', 0):.1f}/100",
         f"- Sentiment trend: {sentiment.get('trend', 'stable')}",
         f"- Article count: {sentiment.get('article_count', 0)}",
+        f"- Weighted source count: {sentiment.get('weighted_article_count', 0)}",
         f"- Positive / Negative / Neutral: "
         f"{sentiment.get('positive_pct', 0):.0f}% / "
         f"{sentiment.get('negative_pct', 0):.0f}% / "
         f"{sentiment.get('neutral_pct', 0):.0f}%",
     ])
+    for source_type, source_data in sentiment.get("source_breakdown", {}).items():
+        lines.append(
+            f"- {source_type.replace('_', ' ').title()}: "
+            f"{source_data.get('count', 0)} items, weight {source_data.get('weight', 0):.2f}"
+        )
     if sentiment.get("top_positive"):
         lines.append("- Top positive headlines:")
         for item in sentiment["top_positive"][:3]:
@@ -1112,12 +1154,19 @@ def generate_transparency_report(
 def render_transparency_report(
     pick: dict,
     risk_level: str,
+    trading_mode: str,
     key_prefix: str,
     rank: int | None = None,
     total_assets: int | None = None,
 ):
     """Render an openable transparency report plus download link for a given asset."""
-    report = generate_transparency_report(pick, risk_level, rank=rank, total_assets=total_assets)
+    report = generate_transparency_report(
+        pick,
+        risk_level,
+        trading_mode,
+        rank=rank,
+        total_assets=total_assets,
+    )
     expand_report = (
         st.session_state.get("report_focus_symbol") == pick["symbol"]
         and "detail" in key_prefix
@@ -1262,14 +1311,14 @@ def sentiment_label(sentiment: dict) -> str:
     return "Balanced"
 
 
-def build_asset_report_href(symbol: str, risk_level: str) -> str:
+def build_asset_report_href(symbol: str, risk_level: str, trading_mode: str) -> str:
     """Build a deep link that opens the selected asset report."""
-    return f"?asset={quote(symbol)}&focus=report&risk={quote(risk_level)}"
+    return f"?asset={quote(symbol)}&focus=report&risk={quote(risk_level)}&mode={quote(trading_mode)}"
 
 
-def build_asset_detail_href(symbol: str, risk_level: str) -> str:
+def build_asset_detail_href(symbol: str, risk_level: str, trading_mode: str) -> str:
     """Build a deep link that opens the selected asset detail view."""
-    return f"?asset={quote(symbol)}&risk={quote(risk_level)}"
+    return f"?asset={quote(symbol)}&risk={quote(risk_level)}&mode={quote(trading_mode)}"
 
 
 def rankings_recommendation(review: dict) -> str:
@@ -1277,7 +1326,7 @@ def rankings_recommendation(review: dict) -> str:
     return "Recommended" if review.get("status") == "Recommended" else "Not Recommended"
 
 
-def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
+def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str) -> str | None:
     """Render a custom rankings table with blue score bars and line sparklines."""
     rows = []
     for cid, data in sorted(
@@ -1291,8 +1340,8 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
             "Rank": rank,
             "Symbol": data["symbol"],
             "Recommendation": rankings_recommendation(review),
-            "AssetHref": build_asset_detail_href(data["symbol"], risk_level),
-            "Report": build_asset_report_href(data["symbol"], risk_level),
+            "AssetHref": build_asset_detail_href(data["symbol"], risk_level, trading_mode),
+            "Report": build_asset_report_href(data["symbol"], risk_level, trading_mode),
             "Price": float(data["current_price"]),
             "Trend": trend_label(data["technical"]["trend"]),
             "Technical": float(data["technical"]["score"]),
@@ -1411,6 +1460,7 @@ def render_rankings_table(all_results: dict, risk_level: str) -> str | None:
 def render_asset_detail_panel(
     pick: dict,
     risk_level: str,
+    trading_mode: str,
     rank: int | None = None,
     total_assets: int | None = None,
     panel_key_prefix: str = "detail",
@@ -1423,7 +1473,7 @@ def render_asset_detail_panel(
     ml = pick["ml_forecast"]
     ohlcv = pick.get("ohlcv", pd.DataFrame())
     reasoning = generate_reasoning(pick)
-    levels = compute_levels(current_price, tech, ml, risk_level)
+    levels = compute_levels(current_price, tech, ml, risk_level, trading_mode)
 
     daily_vol = 0.0
     if not ohlcv.empty:
@@ -1448,6 +1498,7 @@ def render_asset_detail_panel(
     render_transparency_report(
         pick,
         risk_level,
+        trading_mode,
         f"{panel_key_prefix}-{symbol}",
         rank=rank,
         total_assets=total_assets,
@@ -1465,7 +1516,7 @@ def render_asset_detail_panel(
         if not ohlcv.empty:
             forecast_prices = ml.get("forecast", {}).get("forecast_prices", [])
             st.plotly_chart(
-                build_price_chart(ohlcv, symbol, forecast_prices),
+                build_price_chart(ohlcv, symbol, forecast_prices, trading_mode=trading_mode),
                 use_container_width=True,
                 key=f"{panel_key_prefix}-chart-{symbol}-{rank or 'na'}",
             )
@@ -1507,6 +1558,7 @@ def ensure_ui_state():
     st.session_state.setdefault("selected_symbol", None)
     st.session_state.setdefault("report_focus_symbol", None)
     st.session_state.setdefault("watchlist", [])
+    st.session_state.setdefault("backtests", {})
 
 
 def set_selected_symbol(symbol: str | None):
@@ -1524,7 +1576,7 @@ def hydrate_selection_from_query_params():
             st.session_state["report_focus_symbol"] = str(asset)
 
 
-def bootstrap_results_for_deep_link(risk_level: str):
+def bootstrap_results_for_deep_link(risk_level: str, trading_mode: str):
     """Restore saved results when a deep-linked asset report is requested."""
     if "results" in st.session_state:
         return
@@ -1533,16 +1585,18 @@ def bootstrap_results_for_deep_link(risk_level: str):
     if not requested_asset:
         return
 
-    checkpoint = get_resume_state(risk_level)
+    checkpoint = get_resume_state(risk_level, trading_mode)
     if checkpoint and requested_asset in {data.get("symbol") for data in checkpoint.get("results", {}).values()}:
         st.session_state["results"] = checkpoint["results"]
         st.session_state["risk_level"] = checkpoint.get("risk_level", risk_level)
+        st.session_state["trading_mode"] = checkpoint.get("trading_mode", trading_mode)
         return
 
     latest = load_latest_results()
     if latest and requested_asset in {data.get("symbol") for data in latest.get("results", {}).values()}:
         st.session_state["results"] = latest["results"]
         st.session_state["risk_level"] = latest.get("risk_level", risk_level)
+        st.session_state["trading_mode"] = latest.get("trading_mode", trading_mode)
 
 
 def add_to_watchlist(symbol: str):
@@ -1561,6 +1615,7 @@ def render_live_runboard(
     all_results: dict,
     total_assets: int,
     risk_level: str,
+    trading_mode: str,
     latest_symbol: str | None = None,
     resumed: bool = False,
     processed_count: int | None = None,
@@ -1610,18 +1665,19 @@ def render_live_runboard(
         render_asset_detail_panel(
             latest_pick,
             risk_level,
+            trading_mode,
             rank=rank_lookup.get(latest_pick["symbol"]),
             total_assets=len(all_results),
             panel_key_prefix=f"live-detail-{processed}",
         )
 
         st.markdown("### Rolling Rankings")
-        render_rankings_table(all_results, risk_level)
+        render_rankings_table(all_results, risk_level, trading_mode)
 
 
-def render_resume_status_card(risk_level: str):
+def render_resume_status_card(risk_level: str, trading_mode: str):
     """Render a visible checkpoint/resume status card."""
-    resume_state = get_resume_state(risk_level)
+    resume_state = get_resume_state(risk_level, trading_mode)
     total_assets = len(ASSET_UNIVERSE)
 
     if resume_state:
@@ -1639,6 +1695,7 @@ def render_resume_status_card(risk_level: str):
                 <p style="margin:0.55rem 0 0 0; color:#9fb0c7;">
                     Next asset: <strong>{next_symbol}</strong><br/>
                     Risk profile: <strong>{risk_level.capitalize()}</strong><br/>
+                    Trading mode: <strong>{TRADING_MODES[trading_mode]["label"]}</strong><br/>
                     Saved checkpoint: <strong>{saved_at}</strong>
                 </p>
             </div>
@@ -1650,7 +1707,7 @@ def render_resume_status_card(risk_level: str):
             f"""
             <div class="status-card fresh">
                 <div class="section-kicker">Fresh Run</div>
-                <strong>No resumable checkpoint detected for the current risk profile.</strong>
+                <strong>No resumable checkpoint detected for the current risk profile + mode.</strong>
                 <p style="margin:0.55rem 0 0 0; color:#9fb0c7;">
                     The next scan will start from asset <strong>1</strong> of <strong>{total_assets}</strong>.
                 </p>
@@ -1687,7 +1744,12 @@ def render_watchlist_sidebar(all_results: dict):
                 st.rerun()
 
 
-def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str | None = None):
+def render_universe_tab(
+    all_results: dict,
+    risk_level: str,
+    trading_mode: str,
+    selected_symbol: str | None = None,
+):
     """Render a compact scan of the whole asset universe."""
     st.markdown('<div class="section-kicker">Tracked Assets</div>', unsafe_allow_html=True)
     render_asset_universe()
@@ -1714,6 +1776,7 @@ def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str
         render_asset_detail_panel(
             symbol_map[chosen_symbol],
             risk_level,
+            trading_mode,
             rank=rank_lookup.get(chosen_symbol),
             total_assets=len(all_results),
             panel_key_prefix="universe-detail",
@@ -1758,12 +1821,181 @@ def render_universe_tab(all_results: dict, risk_level: str, selected_symbol: str
         st.markdown("</div>", unsafe_allow_html=True)
 
 
+def render_backtest_chart(backtest_payload: dict, symbol: str, trading_mode: str):
+    """Plot equity curve versus buy-and-hold for the selected asset."""
+    result = backtest_payload.get("result", {})
+    equity_curve = result.get("equity_curve", pd.DataFrame())
+    if equity_curve.empty:
+        st.info("No backtest equity curve is available yet.")
+        return
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=equity_curve["timestamp"],
+            y=equity_curve["equity"],
+            name="Strategy Equity",
+            line=dict(color="#38bdf8", width=2.5),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=equity_curve["timestamp"],
+            y=equity_curve["asset_normalized"],
+            name=f"{symbol} Buy & Hold",
+            line=dict(color="#f97316", width=2, dash="dash"),
+        )
+    )
+    fig.update_layout(
+        template="plotly_dark",
+        height=420,
+        margin=dict(l=30, r=20, t=25, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    st.plotly_chart(fig, use_container_width=True, key=f"backtest-chart-{symbol}-{trading_mode}")
+
+
+def render_backtest_tab(
+    risk_level: str,
+    default_trading_mode: str,
+    selected_symbol: str | None = None,
+):
+    """Allow the user to run a real historical backtest on demand."""
+    assets = list_backtest_assets()
+    symbols = [asset["symbol"] for asset in assets]
+    asset_lookup = {asset["symbol"]: asset for asset in assets}
+    default_symbol = selected_symbol if selected_symbol in asset_lookup else symbols[0]
+    chosen_symbol = st.selectbox(
+        "Backtest asset",
+        options=symbols,
+        index=symbols.index(default_symbol),
+        key=f"backtest-select-{default_trading_mode}",
+    )
+    backtest_mode = st.selectbox(
+        "Backtest strategy",
+        options=TRADING_MODE_OPTIONS,
+        index=TRADING_MODE_OPTIONS.index(default_trading_mode),
+        format_func=lambda key: f"{TRADING_MODES[key]['label']} ({TRADING_MODES[key]['holding_period_label']})",
+        key=f"backtest-mode-{default_trading_mode}",
+    )
+    mode_profile = TRADING_MODES[backtest_mode]
+    initial_cash = st.number_input(
+        "Initial capital",
+        min_value=1000.0,
+        max_value=1_000_000.0,
+        value=10_000.0,
+        step=1000.0,
+        key=f"backtest-capital-{backtest_mode}",
+    )
+    period_options = {
+        "swing": ["2y", "5y", "10y", "max"],
+        "day": ["90d", "180d", "365d", "730d"],
+        "scalp": ["7d", "30d", "60d"],
+    }
+    period_values = period_options.get(backtest_mode, [mode_profile.get("backtest_period", mode_profile["yfinance_period"])])
+    default_period = mode_profile.get("backtest_period", mode_profile["yfinance_period"])
+    history_period = st.selectbox(
+        "Historical window",
+        options=period_values,
+        index=period_values.index(default_period) if default_period in period_values else 0,
+        key=f"backtest-period-{backtest_mode}",
+    )
+    cache_key = f"{chosen_symbol}:{risk_level}:{backtest_mode}:{history_period}:{int(initial_cash)}"
+    cached_backtest = st.session_state.setdefault("backtests", {}).get(cache_key)
+
+    st.caption(
+        "This module fetches real historical OHLCV for the chosen asset and mode on demand, "
+        "then runs a walk-forward simulation over that history."
+    )
+    st.caption(
+        "Disclaimer: historical sentiment is excluded from the backtest because reliable "
+        "archival sentiment data is hard to source consistently. The backtest still uses "
+        "real historical price data together with the executable strategy logic, including "
+        "technical indicators, ML forecasts, mode-specific rules, risk settings, and "
+        "fee/slippage assumptions."
+    )
+
+    if st.button(
+        f"Run {TRADING_MODES[backtest_mode]['label']} backtest for {chosen_symbol}",
+        key=f"backtest-run-{cache_key}",
+        type="primary",
+    ):
+        with st.spinner("Fetching history and running walk-forward backtest..."):
+            cached_backtest = run_historical_backtest(
+                chosen_symbol,
+                trading_mode=backtest_mode,
+                risk_level=risk_level,
+                initial_cash=float(initial_cash),
+                period=history_period,
+            )
+        st.session_state["backtests"][cache_key] = cached_backtest
+
+    if not cached_backtest:
+        st.info("Pick an asset and strategy, then run the backtest to see real historical performance.")
+        return
+
+    history_meta = cached_backtest.get("history_meta", {})
+    result = cached_backtest.get("result", {})
+    metrics = result.get("metrics", {})
+
+    h1, h2, h3, h4 = st.columns(4)
+    h1.metric("Asset", chosen_symbol)
+    h2.metric("Mode", TRADING_MODES[backtest_mode]["label"])
+    h3.metric("Interval", history_meta.get("interval", mode_profile["yfinance_interval"]))
+    h4.metric("Bars", f"{history_meta.get('rows', 0)}")
+
+    if history_meta:
+        start_value = history_meta.get("start")
+        end_value = history_meta.get("end")
+        start_label = pd.to_datetime(start_value).strftime("%Y-%m-%d %H:%M") if start_value is not None else "N/A"
+        end_label = pd.to_datetime(end_value).strftime("%Y-%m-%d %H:%M") if end_value is not None else "N/A"
+        st.caption(f"History coverage: {start_label} -> {end_label}")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Strategy Return", f"{metrics.get('total_return_pct', 0):+.2f}%")
+    m2.metric("Buy & Hold", f"{metrics.get('buy_hold_return_pct', 0):+.2f}%")
+    m3.metric("Alpha", f"{metrics.get('alpha_vs_buy_hold_pct', 0):+.2f}%")
+    m4.metric("Trades", f"{metrics.get('trade_count', 0)}")
+
+    m5, m6, m7, m8 = st.columns(4)
+    m5.metric("Win Rate", f"{metrics.get('win_rate_pct', 0):.1f}%")
+    m6.metric("Max Drawdown", f"{metrics.get('max_drawdown_pct', 0):.2f}%")
+    m7.metric("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}")
+    m8.metric("Sortino", f"{metrics.get('sortino_ratio', 0):.2f}")
+
+    m9, m10, m11, m12 = st.columns(4)
+    m9.metric("Profit Factor", f"{metrics.get('profit_factor', 0):.2f}")
+    m10.metric("Avg Trade", f"{metrics.get('avg_trade_return_pct', 0):+.2f}%")
+    m11.metric("Exposure", f"{metrics.get('exposure_pct', 0):.1f}%")
+    m12.metric("Ending Equity", format_price(metrics.get("ending_equity", initial_cash)))
+
+    m13, m14, m15 = st.columns(3)
+    m13.metric("Annualized Return", f"{metrics.get('annualized_return_pct', 0):+.2f}%")
+    m14.metric("Benchmark Annualized", f"{metrics.get('benchmark_annualized_return_pct', 0):+.2f}%")
+    m15.metric("Annualized Volatility", f"{metrics.get('annualized_volatility_pct', 0):.2f}%")
+
+    render_backtest_chart(cached_backtest, chosen_symbol, backtest_mode)
+    st.caption(result.get("notes", ""))
+
+    trades = result.get("trades", pd.DataFrame())
+    if not trades.empty:
+        st.markdown("### Executed Trades")
+        st.dataframe(
+            trades.tail(20),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("This run did not open any trades under the current mode/profile filters.")
+
+
 # ── Main Analysis Pipeline ───────────────────────────────────────────────────
-def run_analysis(risk_level: str) -> dict:
+def run_analysis(risk_level: str, trading_mode: str) -> dict:
     """Execute the full analysis pipeline for all assets."""
     progress_placeholder = st.empty()
     render_analysis_progress(progress_placeholder, 0, "Fetching market overview...")
     live_placeholder = st.empty()
+    mode_profile = TRADING_MODES[trading_mode]
 
     # 1. Market overview
     try:
@@ -1773,7 +2005,7 @@ def run_analysis(risk_level: str) -> dict:
         return {}
 
     total_assets = len(ASSET_UNIVERSE)
-    checkpoint = get_resume_state(risk_level)
+    checkpoint = get_resume_state(risk_level, trading_mode)
     all_results = checkpoint.get("results", {}) if checkpoint else {}
     next_index = int(checkpoint.get("next_index", 0)) if checkpoint else 0
     resumed = checkpoint is not None
@@ -1784,6 +2016,7 @@ def run_analysis(risk_level: str) -> dict:
                 all_results,
                 total_assets,
                 risk_level,
+                trading_mode,
                 latest_symbol=None,
                 resumed=resumed,
                 processed_count=next_index,
@@ -1805,7 +2038,11 @@ def run_analysis(risk_level: str) -> dict:
         try:
             # Fetch OHLCV
             update_status("fetching price history")
-            ohlcv = fetch_ohlcv(meta["yf"])
+            ohlcv = fetch_ohlcv(
+                meta["yf"],
+                interval=mode_profile["yfinance_interval"],
+                period=mode_profile["yfinance_period"],
+            )
             if ohlcv.empty or len(ohlcv) < 30:
                 log.warning("Skipping %s — insufficient OHLCV data", symbol)
                 continue
@@ -1841,7 +2078,11 @@ def run_analysis(risk_level: str) -> dict:
 
             # ML Forecast
             update_status("running forecast model")
-            ml_result = forecast_asset(ohlcv.copy())
+            ml_result = forecast_asset(
+                ohlcv.copy(),
+                horizon=mode_profile["forecast_horizon_bars"],
+                return_threshold=mode_profile["classification_threshold"],
+            )
 
             # Combined Score
             update_status("combining scores")
@@ -1868,12 +2109,13 @@ def run_analysis(risk_level: str) -> dict:
             log.error("Error analysing %s: %s", symbol, e, exc_info=True)
             st.toast(f"⚠️ Error on {symbol}: {e}", icon="⚠️")
         finally:
-            save_run_checkpoint(risk_level, idx + 1, all_results)
+            save_run_checkpoint(risk_level, trading_mode, idx + 1, all_results)
             with live_placeholder.container():
                 render_live_runboard(
                     all_results,
                     total_assets,
                     risk_level,
+                    trading_mode,
                     latest_symbol=symbol,
                     resumed=resumed,
                     processed_count=idx + 1,
@@ -1885,7 +2127,7 @@ def run_analysis(risk_level: str) -> dict:
 
 
 # ── Display Results ──────────────────────────────────────────────────────────
-def display_results(all_results: dict, risk_level: str):
+def display_results(all_results: dict, risk_level: str, trading_mode: str):
     """Render the top picks and analysis dashboard."""
     if not all_results:
         st.error("No assets could be analysed. Check your internet connection and try again.")
@@ -1905,6 +2147,10 @@ def display_results(all_results: dict, risk_level: str):
         unsafe_allow_html=True,
     )
     st.caption(f"Analysis timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    st.caption(
+        f"Trading mode: `{TRADING_MODES[trading_mode]['label']}` "
+        f"using `{TRADING_MODES[trading_mode]['yfinance_interval']}` bars."
+    )
 
     # Top picks
     top_picks = rank_assets(all_results, top_n=3)
@@ -1915,14 +2161,14 @@ def display_results(all_results: dict, risk_level: str):
     if selected_symbol not in symbol_map and top_picks:
         selected_symbol = top_picks[0]["symbol"]
         set_selected_symbol(selected_symbol)
-    overview_tab, picks_tab, universe_tab = st.tabs(["Overview", "Picks", "Universe"])
+    overview_tab, picks_tab, universe_tab, backtests_tab = st.tabs(["Overview", "Picks", "Universe", "Backtests"])
 
     with overview_tab:
         render_summary_tiles(all_results, top_picks, risk_level, regime)
         render_health_check(all_results)
         st.markdown('<div class="section-kicker">Live Rankings</div>', unsafe_allow_html=True)
         st.header("Full Asset Rankings")
-        newly_selected_symbol = render_rankings_table(all_results, risk_level)
+        newly_selected_symbol = render_rankings_table(all_results, risk_level, trading_mode)
         if newly_selected_symbol:
             selected_symbol = newly_selected_symbol
             set_selected_symbol(selected_symbol)
@@ -1937,6 +2183,7 @@ def display_results(all_results: dict, risk_level: str):
             render_asset_detail_panel(
                 symbol_map[selected_symbol],
                 risk_level,
+                trading_mode,
                 rank=rank_lookup.get(selected_symbol),
                 total_assets=len(all_results),
                 panel_key_prefix="overview-detail",
@@ -1953,7 +2200,7 @@ def display_results(all_results: dict, risk_level: str):
             tech = pick["technical"]
             ml = pick["ml_forecast"]
 
-            levels = compute_levels(current_price, tech, ml, risk_level)
+            levels = compute_levels(current_price, tech, ml, risk_level, trading_mode)
 
             ohlcv = pick.get("ohlcv", pd.DataFrame())
             daily_vol = 0.0
@@ -2012,16 +2259,26 @@ def display_results(all_results: dict, risk_level: str):
                 if sent.get("top_positive"):
                     st.markdown("**Top Positive Headlines:**")
                     for h in sent["top_positive"][:3]:
-                        st.caption(f"+ {h['title']} ({h['score']:.3f})")
+                        st.caption(f"+ {h['title']} ({h['score']:.3f}) [{h.get('source', 'Unknown')}]")
                 if sent.get("top_negative"):
                     st.markdown("**Top Negative Headlines:**")
                     for h in sent["top_negative"][:3]:
-                        st.caption(f"- {h['title']} ({h['score']:.3f})")
+                        st.caption(f"- {h['title']} ({h['score']:.3f}) [{h.get('source', 'Unknown')}]")
+
+                source_breakdown = sent.get("source_breakdown", {})
+                if source_breakdown:
+                    st.markdown("**Source Mix:**")
+                    for source_type, source_data in source_breakdown.items():
+                        st.caption(
+                            f"- {source_type.replace('_', ' ').title()}: "
+                            f"{source_data.get('count', 0)} items, "
+                            f"weight {source_data.get('weight', 0):.2f}"
+                        )
 
             with st.expander("Price Chart & Indicators", expanded=True):
                 if not ohlcv.empty:
                     forecast_prices = ml.get("forecast", {}).get("forecast_prices", [])
-                    fig = build_price_chart(ohlcv, symbol, forecast_prices)
+                    fig = build_price_chart(ohlcv, symbol, forecast_prices, trading_mode=trading_mode)
                     st.plotly_chart(
                         fig,
                         use_container_width=True,
@@ -2033,6 +2290,7 @@ def display_results(all_results: dict, risk_level: str):
             render_transparency_report(
                 pick,
                 risk_level,
+                trading_mode,
                 f"pick-{rank_num}-{symbol}",
                 rank=rank_num,
                 total_assets=len(all_results),
@@ -2041,30 +2299,35 @@ def display_results(all_results: dict, risk_level: str):
             st.divider()
 
     with universe_tab:
-        render_universe_tab(all_results, risk_level, selected_symbol)
+        render_universe_tab(all_results, risk_level, trading_mode, selected_symbol)
+
+    with backtests_tab:
+        render_backtest_tab(risk_level, trading_mode, selected_symbol)
 
 
 # ── App Entry Point ──────────────────────────────────────────────────────────
 ensure_ui_state()
 hydrate_selection_from_query_params()
-bootstrap_results_for_deep_link(risk_level)
+bootstrap_results_for_deep_link(risk_level, trading_mode)
 render_hero()
-render_resume_status_card(risk_level)
+render_resume_status_card(risk_level, trading_mode)
 
 if reset_run_btn:
     clear_run_checkpoint()
     st.session_state.pop("results", None)
     st.session_state.pop("risk_level", None)
+    st.session_state.pop("trading_mode", None)
     st.session_state["analysis_running"] = False
     st.toast("Fresh run state cleared. The next scan will start from asset 1.", icon="♻️")
 
 if run_btn:
     with st.spinner("Running full analysis pipeline..."):
-        results = run_analysis(risk_level)
+        results = run_analysis(risk_level, trading_mode)
     st.session_state["analysis_running"] = False
     if results:
         st.session_state["results"] = results
         st.session_state["risk_level"] = risk_level
+        st.session_state["trading_mode"] = trading_mode
 
 if "results" in st.session_state:
     render_sidebar_portfolio(
@@ -2072,7 +2335,11 @@ if "results" in st.session_state:
         st.session_state.get("risk_level", "moderate"),
     )
     render_watchlist_sidebar(st.session_state["results"])
-    display_results(st.session_state["results"], st.session_state.get("risk_level", "moderate"))
+    display_results(
+        st.session_state["results"],
+        st.session_state.get("risk_level", "moderate"),
+        st.session_state.get("trading_mode", trading_mode),
+    )
 else:
     intro_left, intro_right = st.columns([1.25, 1])
 
@@ -2089,10 +2356,10 @@ else:
         )
         st.info("Click **Run Analysis** in the sidebar to start a fresh market scan.", icon="👈")
 
-        resume_state = get_resume_state(risk_level)
+        resume_state = get_resume_state(risk_level, trading_mode)
         if resume_state:
             st.warning(
-                f"A resumable checkpoint is available for this risk profile. "
+                f"A resumable checkpoint is available for this risk profile and trading mode. "
                 f"Use **Run / Resume Analysis** to continue from asset {resume_state['next_index'] + 1}.",
                 icon="⏯️",
             )
@@ -2115,3 +2382,8 @@ else:
     st.markdown('<div class="section-kicker">Tracked Assets</div>', unsafe_allow_html=True)
     with st.expander("Asset Universe"):
         render_asset_universe()
+
+    st.divider()
+    st.markdown('<div class="section-kicker">Historical Backtests</div>', unsafe_allow_html=True)
+    st.subheader("Run an on-demand backtest without scanning the full universe.")
+    render_backtest_tab(risk_level, trading_mode, st.session_state.get("selected_symbol"))

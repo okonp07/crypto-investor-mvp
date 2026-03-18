@@ -3,7 +3,7 @@ Entry / Exit / Stop-Loss Price Logic
 Transparent methodology combining technical levels, ATR, and ML forecasts.
 """
 import numpy as np
-from config import RISK_PROFILES
+from config import RISK_PROFILES, TRADING_MODES
 from utils.helpers import get_logger, safe_div
 
 log = get_logger(__name__)
@@ -14,6 +14,7 @@ def compute_levels(
     technical: dict,
     ml_forecast: dict,
     risk_level: str = "moderate",
+    trading_mode: str = "swing",
 ) -> dict:
     """
     Compute entry, exit, and stop-loss prices for a single asset.
@@ -40,6 +41,7 @@ def compute_levels(
         }
     """
     profile = RISK_PROFILES.get(risk_level, RISK_PROFILES["moderate"])
+    mode_profile = TRADING_MODES.get(trading_mode, TRADING_MODES["swing"])
     sr = technical.get("support_resistance", {})
     forecast = ml_forecast.get("forecast", {})
 
@@ -50,8 +52,8 @@ def compute_levels(
     forecast_mean = forecast.get("forecast_mean", current_price)
     forecast_high = forecast.get("forecast_high", current_price * 1.08)
 
-    atr_mult_stop   = profile["stop_loss_atr_mult"]
-    atr_mult_target = profile["target_atr_mult"]
+    atr_mult_stop = profile["stop_loss_atr_mult"] * mode_profile.get("stop_loss_atr_scale", 1.0)
+    atr_mult_target = profile["target_atr_mult"] * mode_profile.get("target_atr_scale", 1.0)
 
     # ── ATR estimate from support/resistance range as proxy ──────────
     # If we had raw ATR we'd use it; approximate from S/R range
@@ -114,6 +116,7 @@ def compute_levels(
             return round(p, 6)
 
     methodology = (
+        f"Mode: {trading_mode}. "
         f"Entry: {pb*100:.0f}% pullback toward support ({fmt(support)}) and pivot ({fmt(pivot)}). "
         f"Exit: blend of resistance ({fmt(resistance)}), "
         f"ATR target ({fmt(exit_from_atr)}), "

@@ -81,21 +81,25 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
     return feat
 
 
-def _build_target(df: pd.DataFrame, horizon: int) -> pd.Series:
+def _build_target(df: pd.DataFrame, horizon: int, return_threshold: float = 0.02) -> pd.Series:
     """
     Target: forward return over *horizon* days → class label.
-    0 = bearish (< -2%), 1 = neutral (-2% to +2%), 2 = bullish (> +2%)
+    0 = bearish (< -threshold), 1 = neutral, 2 = bullish (> +threshold)
     """
     fwd_ret = df["Close"].pct_change(horizon).shift(-horizon)
     target = pd.Series(1, index=df.index, dtype=int)  # neutral default
-    target[fwd_ret > 0.02] = 2   # bullish
-    target[fwd_ret < -0.02] = 0  # bearish
+    target[fwd_ret > return_threshold] = 2   # bullish
+    target[fwd_ret < -return_threshold] = 0  # bearish
     return target
 
 
 # ── Direction Classifier ─────────────────────────────────────────────────────
 
-def classify_direction(df: pd.DataFrame) -> dict:
+def classify_direction(
+    df: pd.DataFrame,
+    horizon: int = ML_FORECAST_HORIZON,
+    return_threshold: float = 0.02,
+) -> dict:
     """
     Train XGBoost on historical features and predict direction for the next period.
 
@@ -116,7 +120,7 @@ def classify_direction(df: pd.DataFrame) -> dict:
             "model_status": f"xgboost unavailable: {XGBOOST_IMPORT_ERROR}",
         }
 
-    if len(df) < ML_TRAIN_WINDOW + ML_FORECAST_HORIZON + 10:
+    if len(df) < ML_TRAIN_WINDOW + horizon + 10:
         log.warning("Insufficient data for direction classifier (%d bars)", len(df))
         return {
             "direction": "neutral", "probabilities": {"bullish": 0.33, "bearish": 0.33, "neutral": 0.34},
@@ -124,7 +128,7 @@ def classify_direction(df: pd.DataFrame) -> dict:
         }
 
     features = _build_features(df)
-    target = _build_target(df, ML_FORECAST_HORIZON)
+    target = _build_target(df, horizon, return_threshold=return_threshold)
 
     # Align and drop NaN
     combined = features.join(target.rename("target")).dropna()
@@ -147,6 +151,10 @@ def classify_direction(df: pd.DataFrame) -> dict:
         X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
 
+        train_classes = sorted(y_tr.unique())
+        class_to_idx = {cls: idx for idx, cls in enumerate(train_classes)}
+        idx_to_class = {idx: cls for cls, idx in class_to_idx.items()}
+
         X_tr_s = scaler.fit_transform(X_tr)
         X_val_s = scaler.transform(X_val)
 
@@ -159,15 +167,19 @@ def classify_direction(df: pd.DataFrame) -> dict:
             verbosity=0,
             random_state=42,
         )
-        model.fit(X_tr_s, y_tr)
-        preds = model.predict(X_val_s)
+        model.fit(X_tr_s, y_tr.map(class_to_idx))
+        preds = pd.Series(model.predict(X_val_s)).map(idx_to_class)
         cv_scores.append(accuracy_score(y_val, preds))
 
     cv_acc = float(np.mean(cv_scores))
 
     # Final model on all data (except last *horizon* rows with no target)
+    full_classes = sorted(y.unique())
+    class_to_idx = {cls: idx for idx, cls in enumerate(full_classes)}
+    idx_to_class = {idx: cls for cls, idx in class_to_idx.items()}
+
     X_all = scaler.fit_transform(X)
-    model.fit(X_all, y)
+    model.fit(X_all, y.map(class_to_idx))
 
     # Predict on the most recent features
     X_last = scaler.transform(X.iloc[[-1]])
@@ -175,7 +187,7 @@ def classify_direction(df: pd.DataFrame) -> dict:
 
     # Map class indices to labels
     class_labels = {0: "bearish", 1: "neutral", 2: "bullish"}
-    classes = model.classes_
+    classes = [idx_to_class.get(int(cls), int(cls)) for cls in model.classes_]
     probabilities = {}
     for idx, cls in enumerate(classes):
         probabilities[class_labels.get(cls, str(cls))] = round(float(proba[idx]), 4)
@@ -263,7 +275,11 @@ def forecast_price(df: pd.DataFrame, horizon: int = ML_FORECAST_HORIZON) -> dict
 
 # ── Combined ML Score ────────────────────────────────────────────────────────
 
-def forecast_asset(df: pd.DataFrame) -> dict:
+def forecast_asset(
+    df: pd.DataFrame,
+    horizon: int = ML_FORECAST_HORIZON,
+    return_threshold: float = 0.02,
+) -> dict:
     """
     Run the full ML forecasting pipeline for one asset.
 
@@ -274,8 +290,8 @@ def forecast_asset(df: pd.DataFrame) -> dict:
             "forecast": dict (from forecast_price),
         }
     """
-    direction = classify_direction(df)
-    forecast = forecast_price(df)
+    direction = classify_direction(df, horizon=horizon, return_threshold=return_threshold)
+    forecast = forecast_price(df, horizon=horizon)
 
     # Composite ML score:
     # - Direction probability contributes 60%

@@ -1,26 +1,25 @@
 """
 Sentiment Analysis Module
-Analyses crypto news headlines/summaries using VADER and TextBlob.
-Produces a sentiment score (0-100) with trend and narrative summary.
+
+Analyses crypto text inputs using VADER and TextBlob, then weights them by
+source quality so professional editorial sources count more than broad
+community chatter.
 """
 import numpy as np
-from datetime import datetime, timedelta
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from textblob import TextBlob
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+from config import SENTIMENT_SOURCE_WEIGHTS
 from utils.helpers import get_logger
 
 log = get_logger(__name__)
-
 _vader = SentimentIntensityAnalyzer()
 
 
 def _analyse_single(text: str) -> dict:
-    """Run VADER + TextBlob on a single text string. Returns blended scores."""
+    """Run VADER + TextBlob on a single text string and blend the outputs."""
     vader_scores = _vader.polarity_scores(text)
     blob = TextBlob(text)
-
-    # VADER compound: [-1, 1], TextBlob polarity: [-1, 1]
-    # Blend: 60% VADER (better for social/informal), 40% TextBlob
     blended = vader_scores["compound"] * 0.6 + blob.sentiment.polarity * 0.4
 
     return {
@@ -34,64 +33,69 @@ def _analyse_single(text: str) -> dict:
 
 
 def analyse_sentiment(news_items: list[dict]) -> dict:
-    """
-    Analyse sentiment of a list of news items for one asset.
-
-    Args:
-        news_items: list of {"title", "summary", "published", "source", "url"}
-
-    Returns:
-        {
-            "score": float (0-100),
-            "trend": "improving" | "declining" | "stable",
-            "blended_mean": float (-1 to 1),
-            "positive_pct": float,
-            "negative_pct": float,
-            "neutral_pct": float,
-            "article_count": int,
-            "top_positive": [{"title", "score"}],
-            "top_negative": [{"title", "score"}],
-            "recent_vs_older": float,  # sentiment shift
-        }
-    """
+    """Analyse a list of sentiment inputs for one asset."""
     if not news_items:
         log.warning("No news items for sentiment analysis")
         return {
-            "score": 50.0, "trend": "stable", "blended_mean": 0.0,
-            "positive_pct": 0, "negative_pct": 0, "neutral_pct": 0,
-            "article_count": 0, "top_positive": [], "top_negative": [],
+            "score": 50.0,
+            "trend": "stable",
+            "blended_mean": 0.0,
+            "positive_pct": 0.0,
+            "negative_pct": 0.0,
+            "neutral_pct": 0.0,
+            "article_count": 0,
+            "weighted_article_count": 0.0,
+            "top_positive": [],
+            "top_negative": [],
             "recent_vs_older": 0.0,
+            "source_breakdown": {},
         }
 
     results = []
     for item in news_items:
-        text = f"{item['title']}. {item.get('summary', '')}"
+        text = f"{item.get('title', '')}. {item.get('summary', '')}".strip()
         scores = _analyse_single(text)
-        scores["title"] = item["title"]
-        scores["published"] = item.get("published")
+        source_type = item.get("source_type", "news")
+        type_weight = float(SENTIMENT_SOURCE_WEIGHTS.get(source_type, 1.0))
+        item_weight = float(item.get("source_weight", 1.0))
+        total_weight = type_weight * item_weight
+
+        scores.update(
+            {
+                "title": item.get("title", ""),
+                "source": item.get("source", "Unknown"),
+                "source_type": source_type,
+                "published": item.get("published"),
+                "weight": total_weight,
+            }
+        )
         results.append(scores)
 
-    blended_values = [r["blended"] for r in results]
-    mean_blend = np.mean(blended_values)
+    weights = np.array([max(r["weight"], 0.05) for r in results], dtype=float)
+    blended_values = np.array([r["blended"] for r in results], dtype=float)
+    mean_blend = np.average(blended_values, weights=weights)
 
-    # Classify each article
-    pos_count = sum(1 for v in blended_values if v > 0.05)
-    neg_count = sum(1 for v in blended_values if v < -0.05)
-    neu_count = len(blended_values) - pos_count - neg_count
-    total = len(blended_values)
+    pos_weight = float(sum(r["weight"] for r in results if r["blended"] > 0.05))
+    neg_weight = float(sum(r["weight"] for r in results if r["blended"] < -0.05))
+    total_weight = float(weights.sum())
+    neu_weight = max(total_weight - pos_weight - neg_weight, 0.0)
 
-    # Score: map blended mean from [-1, 1] to [0, 100]
     score = float(np.clip((mean_blend + 1) / 2 * 100, 0, 100))
 
-    # Sentiment trend: compare recent half vs older half
     mid = len(results) // 2
+    shift = 0.0
     if mid > 0:
-        # results are sorted newest-first
-        recent_mean = np.mean([r["blended"] for r in results[:mid]])
-        older_mean = np.mean([r["blended"] for r in results[mid:]])
-        shift = recent_mean - older_mean
-    else:
-        shift = 0.0
+        recent = results[:mid]
+        older = results[mid:]
+        recent_mean = np.average(
+            [r["blended"] for r in recent],
+            weights=[max(r["weight"], 0.05) for r in recent],
+        )
+        older_mean = np.average(
+            [r["blended"] for r in older],
+            weights=[max(r["weight"], 0.05) for r in older],
+        )
+        shift = float(recent_mean - older_mean)
 
     if shift > 0.1:
         trend = "improving"
@@ -100,24 +104,49 @@ def analyse_sentiment(news_items: list[dict]) -> dict:
     else:
         trend = "stable"
 
-    # Top headlines
-    sorted_pos = sorted(results, key=lambda r: r["blended"], reverse=True)
-    sorted_neg = sorted(results, key=lambda r: r["blended"])
+    sorted_pos = sorted(results, key=lambda row: row["blended"], reverse=True)
+    sorted_neg = sorted(results, key=lambda row: row["blended"])
 
-    top_positive = [{"title": r["title"], "score": round(r["blended"], 3)}
-                    for r in sorted_pos[:3] if r["blended"] > 0.05]
-    top_negative = [{"title": r["title"], "score": round(r["blended"], 3)}
-                    for r in sorted_neg[:3] if r["blended"] < -0.05]
+    top_positive = [
+        {
+            "title": row["title"],
+            "score": round(float(row["blended"]), 3),
+            "source": row["source"],
+        }
+        for row in sorted_pos[:4]
+        if row["blended"] > 0.05
+    ]
+    top_negative = [
+        {
+            "title": row["title"],
+            "score": round(float(row["blended"]), 3),
+            "source": row["source"],
+        }
+        for row in sorted_neg[:4]
+        if row["blended"] < -0.05
+    ]
+
+    source_breakdown = {}
+    for row in results:
+        source_type = row["source_type"]
+        entry = source_breakdown.setdefault(
+            source_type,
+            {"count": 0, "weight": 0.0},
+        )
+        entry["count"] += 1
+        entry["weight"] += float(row["weight"])
 
     return {
         "score": round(score, 2),
         "trend": trend,
         "blended_mean": round(float(mean_blend), 4),
-        "positive_pct": round(pos_count / total * 100, 1),
-        "negative_pct": round(neg_count / total * 100, 1),
-        "neutral_pct": round(neu_count / total * 100, 1),
-        "article_count": total,
+        "positive_pct": round(pos_weight / total_weight * 100, 1),
+        "negative_pct": round(neg_weight / total_weight * 100, 1),
+        "neutral_pct": round(neu_weight / total_weight * 100, 1),
+        "article_count": len(results),
+        "weighted_article_count": round(total_weight, 2),
         "top_positive": top_positive,
         "top_negative": top_negative,
-        "recent_vs_older": round(float(shift), 4),
+        "recent_vs_older": round(shift, 4),
+        "source_breakdown": source_breakdown,
     }

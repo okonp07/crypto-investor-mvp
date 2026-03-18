@@ -100,27 +100,44 @@ def fetch_coin_details(coin_id: str) -> dict:
 # ── Yahoo Finance OHLCV ──────────────────────────────────────────────────────
 
 @retry(max_attempts=2, delay=1.0)
-def fetch_ohlcv(yf_ticker: str, days: int = OHLC_HISTORY_DAYS) -> pd.DataFrame:
+def fetch_ohlcv(
+    yf_ticker: str,
+    days: int = OHLC_HISTORY_DAYS,
+    interval: str = "1d",
+    period: str | None = None,
+    start: str | pd.Timestamp | None = None,
+    end: str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
     """
-    Download daily OHLCV from Yahoo Finance.
+    Download OHLCV from Yahoo Finance for the requested interval.
     Returns DataFrame with columns: Open, High, Low, Close, Volume (DatetimeIndex).
     """
-    period_map = {d: p for d, p in [(30, "1mo"), (90, "3mo"), (180, "6mo"), (365, "1y")]}
-    period = "6mo"
-    for threshold, label in sorted(period_map.items()):
-        if days <= threshold:
-            period = label
-            break
+    if period is None and start is None and end is None:
+        period_map = {d: p for d, p in [(30, "1mo"), (90, "3mo"), (180, "6mo"), (365, "1y"), (730, "2y")]}
+        period = "6mo"
+        for threshold, label in sorted(period_map.items()):
+            if days <= threshold:
+                period = label
+                break
 
     ticker = yf.Ticker(yf_ticker)
-    df = ticker.history(period=period, interval="1d")
+    history_kwargs = {"interval": interval}
+    if start is not None or end is not None:
+        history_kwargs["start"] = start
+        history_kwargs["end"] = end
+    else:
+        history_kwargs["period"] = period
+
+    df = ticker.history(**history_kwargs)
     if df.empty:
-        log.warning("No OHLCV data for %s", yf_ticker)
+        label = f"{start} -> {end}" if start is not None or end is not None else period
+        log.warning("No OHLCV data for %s (%s, %s)", yf_ticker, label, interval)
         return pd.DataFrame()
 
     df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
     df.index = pd.to_datetime(df.index).tz_localize(None)
-    log.info("Fetched %d OHLCV bars for %s", len(df), yf_ticker)
+    label = f"{start} -> {end}" if start is not None or end is not None else period
+    log.info("Fetched %d OHLCV bars for %s (%s, %s)", len(df), yf_ticker, label, interval)
     return df
 
 

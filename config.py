@@ -34,13 +34,179 @@ COINPAPRIKA_RATE_LIMIT = float(os.getenv("COINPAPRIKA_RATE_LIMIT", "0.2"))
 CRYPTOPANIC_API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
-# RSS news feeds for sentiment
+# Free, high-signal sentiment/news sources.
+# The pipeline treats professional editorial sources more heavily than
+# community feeds, then blends both into the final sentiment view.
 NEWS_RSS_FEEDS = [
-    "https://www.coindesk.com/arc/outboundfeeds/rss/",
-    "https://cointelegraph.com/rss",
-    "https://decrypt.co/feed",
-    "https://bitcoinmagazine.com/feed",
+    {
+        "name": "CoinDesk",
+        "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+        "source_type": "news",
+        "weight": 1.0,
+    },
+    {
+        "name": "Cointelegraph",
+        "url": "https://cointelegraph.com/rss",
+        "source_type": "news",
+        "weight": 0.95,
+    },
+    {
+        "name": "Decrypt",
+        "url": "https://decrypt.co/feed",
+        "source_type": "news",
+        "weight": 0.9,
+    },
+    {
+        "name": "Bitcoin Magazine",
+        "url": "https://bitcoinmagazine.com/feed",
+        "source_type": "news",
+        "weight": 0.85,
+    },
+    {
+        "name": "Blockworks",
+        "url": "https://blockworks.co/feed",
+        "source_type": "news",
+        "weight": 0.95,
+    },
+    {
+        "name": "The Defiant",
+        "url": "https://thedefiant.io/feed",
+        "source_type": "news",
+        "weight": 0.9,
+    },
 ]
+
+REDDIT_COMMUNITY_FEEDS = {
+    "*": [
+        {
+            "name": "r/CryptoCurrency",
+            "url": "https://www.reddit.com/r/CryptoCurrency/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "BTC": [
+        {
+            "name": "r/Bitcoin",
+            "url": "https://www.reddit.com/r/Bitcoin/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "ETH": [
+        {
+            "name": "r/ethereum",
+            "url": "https://www.reddit.com/r/ethereum/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "SOL": [
+        {
+            "name": "r/solana",
+            "url": "https://www.reddit.com/r/solana/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "XRP": [
+        {
+            "name": "r/Ripple",
+            "url": "https://www.reddit.com/r/Ripple/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "ADA": [
+        {
+            "name": "r/cardano",
+            "url": "https://www.reddit.com/r/cardano/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "AVAX": [
+        {
+            "name": "r/Avax",
+            "url": "https://www.reddit.com/r/Avax/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "DOT": [
+        {
+            "name": "r/dot",
+            "url": "https://www.reddit.com/r/dot/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "LINK": [
+        {
+            "name": "r/Chainlink",
+            "url": "https://www.reddit.com/r/Chainlink/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "MATIC": [
+        {
+            "name": "r/0xPolygon",
+            "url": "https://www.reddit.com/r/0xPolygon/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "LTC": [
+        {
+            "name": "r/litecoin",
+            "url": "https://www.reddit.com/r/litecoin/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "UNI": [
+        {
+            "name": "r/UniSwap",
+            "url": "https://www.reddit.com/r/UniSwap/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "NEAR": [
+        {
+            "name": "r/nearprotocol",
+            "url": "https://www.reddit.com/r/nearprotocol/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "APT": [
+        {
+            "name": "r/Aptos",
+            "url": "https://www.reddit.com/r/Aptos/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+    "SUI": [
+        {
+            "name": "r/Sui",
+            "url": "https://www.reddit.com/r/Sui/.rss",
+            "source_type": "community",
+            "weight": 0.55,
+        },
+    ],
+}
+
+SENTIMENT_SOURCE_WEIGHTS = {
+    "news": 1.0,
+    "community": 0.6,
+    "aggregator": 0.9,
+    "market_mood": 0.7,
+}
+
+ALTERNATIVE_ME_FNG_URL = "https://api.alternative.me/fng/"
 
 # ── Technical Analysis ────────────────────────────────────────────────────────
 OHLC_HISTORY_DAYS = 180          # days of historical data to fetch
@@ -94,9 +260,82 @@ SENTIMENT_MAX_ARTICLES = 30      # per asset
 SENTIMENT_LOOKBACK_DAYS = 7
 
 # ── ML / Forecasting ─────────────────────────────────────────────────────────
-ML_FORECAST_HORIZON = 7          # days ahead
+ML_FORECAST_HORIZON = 7          # bars ahead; overridden by trading mode
 ML_TRAIN_WINDOW = 120            # days for training
 ML_FEATURES_LAGS = [1, 2, 3, 5, 7, 14, 21]  # lagged return periods
+
+# ── Trading Modes ────────────────────────────────────────────────────────────
+TRADING_MODES = {
+    "swing": {
+        "label": "Swing",
+        "description": "Daily-bar positioning for 20-60 day trades.",
+        "holding_period_label": "20-60 days",
+        "yfinance_period": "2y",
+        "backtest_period": "5y",
+        "yfinance_interval": "1d",
+        "forecast_horizon_bars": 30,
+        "classification_threshold": 0.03,
+        "max_holding_bars": 60,
+        "min_holding_bars": 5,
+        "warmup_bars": 120,
+        "signal_stride_bars": 1,
+        "bars_per_day": 1,
+        "minimum_ml_score": 57,
+        "minimum_technical_score": 54,
+        "exit_ml_score": 44,
+        "exit_technical_score": 45,
+        "stop_loss_atr_scale": 1.2,
+        "target_atr_scale": 1.4,
+        "fee_bps": 10,
+        "slippage_bps": 5,
+    },
+    "day": {
+        "label": "Day",
+        "description": "Hourly-bar setups designed for 1-3 day holds.",
+        "holding_period_label": "1-3 days",
+        "yfinance_period": "60d",
+        "backtest_period": "730d",
+        "yfinance_interval": "1h",
+        "forecast_horizon_bars": 24,
+        "classification_threshold": 0.012,
+        "max_holding_bars": 72,
+        "min_holding_bars": 4,
+        "warmup_bars": 120,
+        "signal_stride_bars": 2,
+        "bars_per_day": 24,
+        "minimum_ml_score": 55,
+        "minimum_technical_score": 52,
+        "exit_ml_score": 46,
+        "exit_technical_score": 46,
+        "stop_loss_atr_scale": 0.75,
+        "target_atr_scale": 0.9,
+        "fee_bps": 12,
+        "slippage_bps": 6,
+    },
+    "scalp": {
+        "label": "Scalp",
+        "description": "15-minute intraday tactics for sub-day trading.",
+        "holding_period_label": "Less than 1 day",
+        "yfinance_period": "30d",
+        "backtest_period": "60d",
+        "yfinance_interval": "15m",
+        "forecast_horizon_bars": 16,
+        "classification_threshold": 0.004,
+        "max_holding_bars": 32,
+        "min_holding_bars": 2,
+        "warmup_bars": 160,
+        "signal_stride_bars": 4,
+        "bars_per_day": 96,
+        "minimum_ml_score": 53,
+        "minimum_technical_score": 51,
+        "exit_ml_score": 47,
+        "exit_technical_score": 47,
+        "stop_loss_atr_scale": 0.45,
+        "target_atr_scale": 0.6,
+        "fee_bps": 14,
+        "slippage_bps": 8,
+    },
+}
 
 # ── Combined Scoring Weights ──────────────────────────────────────────────────
 SCORING_WEIGHTS = {
