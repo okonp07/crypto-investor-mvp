@@ -807,6 +807,37 @@ def render_hero():
     )
 
 
+def render_app_footer():
+    """Render the persistent attribution and license footer."""
+    st.divider()
+    st.markdown(
+        """
+        <div style="padding:0.5rem 0 1.5rem 0; color:#9fb0c7; font-size:0.94rem; line-height:1.8;">
+            <div style="font-family:'Space Grotesk', sans-serif; font-size:1.05rem; color:#f8fafc; margin-bottom:0.35rem;">
+                License
+            </div>
+            <div>This project is licensed under the MIT License - see the LICENSE file for details.</div>
+            <div>&copy; 2026</div>
+            <div>Streamlit app developed by Prince Okon.</div>
+            <div>
+                Based on the WorldQuant University Masters in Financial Engineering Capstone project,
+                <em>Machine Learning-Based Swing Trading Strategy for Cryptocurrencies</em>.
+            </div>
+            <div>
+                Project contributors: Prince Okon
+                (<a href="mailto:okonp07@gmail.com" style="color:#7dd3fc;">okonp07@gmail.com</a>),
+                Paidamoyo Mutepfa
+                (<a href="mailto:paidamoyomutepfa@gmail.com" style="color:#7dd3fc;">paidamoyomutepfa@gmail.com</a>)
+                and Frackson Mkwangwala
+                (<a href="mailto:fracksonmakwangwala@gmail.com" style="color:#7dd3fc;">fracksonmakwangwala@gmail.com</a>)
+            </div>
+            <div>Phone: <a href="tel:+2349020000299" style="color:#7dd3fc;">+234(0)9020000299</a></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_summary_tiles(all_results: dict, top_picks: list[dict], risk_level: str, regime: str):
     """Render high-level overview tiles above the picks."""
     avg_score = np.mean([r["final"]["final_score"] for r in all_results.values()])
@@ -2514,3 +2545,5 @@ else:
     st.markdown('<div class="section-kicker">Historical Backtests</div>', unsafe_allow_html=True)
     st.subheader("Run an on-demand backtest without scanning the full universe.")
     render_backtest_tab(risk_level, trading_mode, st.session_state.get("selected_symbol"))
+
+render_app_footer()

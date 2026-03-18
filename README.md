@@ -1,173 +1,122 @@
 # TalentPoint
 
+<p align="center">
+  <a href="https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/"><img src="https://img.shields.io/badge/Live%20App-Streamlit-red?style=for-the-badge&logo=streamlit" alt="Live App"></a>
+  <img src="https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python" alt="Python">
+  <img src="https://img.shields.io/badge/Modes-Swing%20%7C%20Day%20%7C%20Scalp-0ea5e9?style=for-the-badge" alt="Trading Modes">
+  <img src="https://img.shields.io/badge/Signals-Long%20%26%20Short-22c55e?style=for-the-badge" alt="Long and Short Signals">
+  <img src="https://img.shields.io/badge/Status-Deployed-success?style=for-the-badge" alt="Status Deployed">
+</p>
+
+<p align="center">
+  Streamlit application for ranking major cryptocurrencies, generating long and short trade setups, and running on-demand historical backtests across swing, day, and scalp trading modes.
+</p>
+
+<p align="center">
+  <strong><a href="https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/">Launch the live app</a></strong>
+</p>
+
+<p align="center">
+  <a href="https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/"><img src="https://img.shields.io/badge/Open%20The%20Streamlit%20App-Click%20Here-ff4b4b?style=for-the-badge&logo=streamlit&logoColor=white" alt="Open the Streamlit app"></a>
+</p>
+
 ## Live App
 
-Use the live Streamlit app here:
+### [Open the deployed Streamlit app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
-[Open TalentPoint](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
+If the app has just been updated, give Streamlit a minute to finish rebuilding before refreshing the page.
 
-A Streamlit-based crypto research dashboard that ranks a curated asset universe using technical analysis, market-structure fundamentals, news sentiment, and machine-learning forecasts.
+## App Preview
 
-The app is designed as a decision-support tool, not an execution bot. It produces a ranked market view plus actionable trade-style levels such as suggested entry, stop-loss, take-profit, leverage guidance, and score breakdowns.
+<p align="center">
+  <a href="https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/">
+    <img src="talentpoint-banner.svg" alt="TalentPoint app preview banner" width="700"/>
+  </a>
+</p>
 
-This is not financial advice. Use at your own risk.
+## Overview
 
-## What The App Does
+TalentPoint is a crypto research and trading decision-support dashboard built with Streamlit. It scans a curated universe of large and actively traded crypto assets, scores them across multiple lenses, and turns the strongest ideas into clear trade-ready outputs.
 
-For each tracked asset, the app:
+The app combines:
 
-- pulls price history from Yahoo Finance
-- pulls market metadata from CoinPaprika
-- scans crypto news sources for sentiment
-- measures developer activity from GitHub when available
-- computes four pillar scores: technical, fundamental, sentiment, and ML
-- combines those scores into a final ranking
-- suggests entry price, stop-loss, take-profit, leverage, and risk/reward
-- checkpoints progress after each completed asset so interrupted runs can resume
-- shows partial results during the scan instead of waiting for all 15 assets to finish
-- generates per-asset transparency reports explaining score construction, data sources, and trade-level logic
+- technical analysis
+- market-structure and fundamental scoring
+- news and community sentiment
+- machine-learning direction and forecast signals
+- long and short trade setup generation
+- on-demand historical backtesting
 
-## Current Product State
+This is not an execution bot and it is not financial advice. It is designed to help you inspect market structure, compare opportunities, and evaluate strategy behavior more transparently.
 
-The current frontend is a polished Streamlit dashboard with:
+## Key Features
 
-- a live deployment on Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
-- a hero-style landing section and upgraded visual theme
-- `Overview`, `Picks`, and `Universe` tabs to reduce scroll length
-- a visible resume-status card that shows checkpoint progress, next asset, and save time
-- a live runboard that surfaces rolling rankings and latest-completed asset details during the scan
-- an interactive rankings table with progress bars, mini price-action sparklines, and direct report links for each asset
-- persistent asset selection across tabs
-- a one-click watchlist in the sidebar
-- a score-weighted suggested allocation panel for the current top picks
-- a health-check panel that shows whether the full pipeline and ML layer are active
-- downloadable transparency reports for selected assets, top picks, and non-top-ranked assets opened from the rankings or universe views
-- detailed top-pick cards with chart, sentiment, rationale, and risk controls
+- Live market scan across a multi-asset crypto universe
+- Long and short trade predictions instead of long-only bias
+- Three trading modes: `swing`, `day`, and `scalp`
+- Entry, stop-loss, take-profit, expected return, and risk/reward outputs
+- On-demand historical backtests by asset and strategy mode
+- Transparency reports for individual assets
+- Watchlist support and persistent selected-asset detail panels
+- Interactive rankings table with score bars and price sparklines
+- Streamlit frontend with tabs for overview, picks, universe, and backtests
 
 ## Data Sources
 
-- `Yahoo Finance` via `yfinance`: OHLCV history
-- `CoinPaprika`: market metadata such as price, market cap, rank, supply, and volume
-- `RSS feeds` + optional `CryptoPanic`: sentiment/news input
-- `GitHub API`: developer activity proxy
+- `Yahoo Finance` via `yfinance` for OHLCV price history
+- `CoinPaprika` for market metadata and supply context
+- `RSS feeds`, `Reddit RSS`, and optional `CryptoPanic` for sentiment inputs
+- `Alternative.me Fear & Greed Index` for market-wide mood context
+- `GitHub API` for developer-activity proxy data
 
-## Scoring Model
+## What The App Produces
 
-The app scores each asset across four pillars:
+For each analysed asset, TalentPoint can generate:
 
-| Pillar | What It Uses | Score Range |
-| --- | --- | --- |
-| Technical | RSI, MACD, EMA/SMA cross, Bollinger Bands, ADX, Stochastic, OBV, ATR, momentum, support/resistance | 0-100 |
-| Fundamental | Market cap rank, volume/market-cap ratio, supply dynamics, price momentum, relative strength, developer activity, liquidity | 0-100 |
-| Sentiment | VADER + TextBlob over recent crypto news | 0-100 |
-| ML Forecast | XGBoost direction classifier + exponential smoothing forecast | 0-100 |
+- technical, fundamental, sentiment, and ML scores
+- a combined final score
+- a directional trade setup: `long`, `short`, or mixed
+- suggested entry, stop-loss, and take-profit levels
+- leverage and risk context
+- transparency and reasoning reports
 
-Default combined score:
+## Trading Modes
 
-```text
-Final Score = 0.30 * Technical
-            + 0.20 * Fundamental
-            + 0.20 * Sentiment
-            + 0.30 * ML
-```
+The app supports three strategy modes:
 
-Risk profiles reweight those components and also affect leverage, stop-loss width, and target sizing.
+- `Swing`: daily-bar positioning for roughly 20-60 day trades
+- `Day`: hourly-bar setups for roughly 1-3 day trades
+- `Scalp`: 15-minute intraday setups for sub-day trading
 
-## Trade-Level Outputs
+These modes affect:
 
-For each strong candidate, the app surfaces:
+- forecast horizon
+- classification threshold
+- holding window
+- stop-loss and target scaling
+- transaction-cost assumptions
+- backtest history window
 
-- `Entry price`
-- `Stop-loss`
-- `Take-profit / exit price`
-- `Risk/reward ratio`
-- `Expected return`
-- `Suggested leverage`
+## Backtesting
 
-These are computed from support/resistance, ATR-style logic, forecast levels, confidence, and user-selected risk tolerance.
+TalentPoint includes a real historical backtesting module that can be run on demand by:
 
-## Transparency Reports
+- asset
+- trading mode
+- historical period
+- starting capital
 
-TalentPoint includes a built-in transparency report for every analysed asset in a run.
+Current backtests use real historical OHLCV together with the executable strategy logic, including:
 
-Each report explains:
+- technical signals
+- ML forecasts
+- long and short setup logic
+- mode-specific holding rules
+- fees and slippage assumptions
 
-- the raw and weighted contribution of each score pillar
-- the underlying technical and fundamental factor scores
-- sentiment article counts and headline summaries
-- ML direction, confidence, forecast range, and model status
-- data-source provenance for the asset analysis
-- why the suggested entry, stop-loss, and take-profit levels were chosen
-- leverage rationale and risk/reward context
+Historical sentiment is excluded from backtests because reliable archival sentiment data is difficult to source consistently.
 
-Reports can be viewed in-app and downloaded as markdown files for review or sharing.
-
-You can also open a report directly from the rolling rankings table via the `Open report` link beside each asset, which deep-links into that asset's review panel even if the asset is not in the top 3.
-
-## Run Experience
-
-TalentPoint now supports a more resilient long-running scan flow:
-
-- each asset is checkpointed after completion
-- interrupted runs can resume from the next pending asset instead of restarting from asset 1
-- the app shows partial results while the 15-asset loop is still in progress
-- users can explicitly clear the checkpoint and start a fresh run
-- the UI exposes checkpoint state before a run starts
-
-This keeps the app useful even when live APIs are slow or a session is interrupted.
-
-## Asset Universe
-
-The default universe includes:
-
-- BTC
-- ETH
-- SOL
-- BNB
-- XRP
-- ADA
-- AVAX
-- DOT
-- LINK
-- MATIC
-- LTC
-- UNI
-- NEAR
-- APT
-- SUI
-
-## Project Structure
-
-```text
-talentpoint/
-├── app.py                    # Streamlit UI and app flow
-├── config.py                 # Asset universe, weights, risk profiles, API settings
-├── data/
-│   ├── market_data.py        # CoinPaprika + Yahoo Finance ingestion, caching
-│   └── news_data.py          # RSS + CryptoPanic ingestion, dedupe, caching
-├── analysis/
-│   ├── technical.py          # Technical indicators and technical score
-│   ├── fundamental.py        # Fundamental / market structure score
-│   ├── sentiment.py          # News sentiment scoring
-│   └── ml_forecast.py        # XGBoost direction + price forecast
-├── scoring/
-│   └── engine.py             # Final score combination, ranking, reasoning
-├── strategy/
-│   ├── entry_exit.py         # Entry, exit, stop-loss computation
-│   └── risk.py               # Leverage and risk profile logic
-├── utils/
-│   └── helpers.py            # Logging, retries, normalization helpers
-├── requirements.txt
-├── ARTICLE.md
-├── PRD_UI_AND_RELIABILITY_UPDATE.md
-└── README.md
-```
-
-## Running Locally
-
-Live app:
-
-[https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
+## Run Locally
 
 ```bash
 pip install -r requirements.txt
@@ -181,68 +130,51 @@ Optional environment variables:
 - `COINPAPRIKA_RATE_LIMIT`
 - `LOG_LEVEL`
 
-## Streamlit Cloud Deployment
+## Project Structure
 
-This project is suitable for Streamlit Community Cloud deployment.
+```text
+crypto-investor-mvp/
+├── app.py
+├── config.py
+├── data/
+│   ├── market_data.py
+│   └── news_data.py
+├── analysis/
+│   ├── technical.py
+│   ├── fundamental.py
+│   ├── sentiment.py
+│   └── ml_forecast.py
+├── backtesting/
+│   ├── engine.py
+│   └── service.py
+├── scoring/
+│   └── engine.py
+├── strategy/
+│   ├── entry_exit.py
+│   └── risk.py
+├── utils/
+│   └── helpers.py
+├── LICENSE
+├── README.md
+├── ARTICLE.md
+├── ROADMAP_FULL_PRODUCT.md
+└── PR_LONG_SHORT_TRADE_PREDICTIONS.md
+```
 
-Current deployed app:
+## Live Deployment Notes
 
-[Open the deployed Streamlit app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
+- Main app entrypoint: `app.py`
+- Hosted on Streamlit Community Cloud
+- Live URL: [https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
 
-Typical setup:
+If the app feels slow, the biggest bottlenecks are usually live data fetches and historical backtesting workload rather than a missing GPU. Caching and deployment on stronger CPU/RAM infrastructure will help more than GPU for this project in its current form.
 
-1. Push the repo to GitHub.
-2. In Streamlit Community Cloud, create a new app from this repo.
-3. Set the main file path to `app.py`.
-4. Add any needed secrets such as `CRYPTOPANIC_API_KEY` and `GITHUB_TOKEN`.
-5. Deploy.
+## Contributors
 
-Notes:
+- Prince Okon
+- Paidamoyo Mutepfa
+- Frackson Mkwangwala
 
-- The app is designed to run from Streamlit, not as a static site.
-- First load may take longer because it fetches live data.
-- In-process caching helps repeated reruns within the same session.
-- interrupted runs can resume from a saved checkpoint for the same risk profile
+## License
 
-## Limitations
-
-- Live external APIs can still slow down or fail transiently
-- Sentiment coverage is limited to configured news sources unless expanded
-- ML is intentionally lightweight and transparent, not institutional-grade forecasting
-- There is no brokerage integration or automatic trade execution
-- There is no historical backtesting module yet
-- resume state is stored locally per app instance, so deployment environments should be tested for persistence expectations
-
-## Recent Improvements
-
-- migrated market metadata from CoinGecko to CoinPaprika
-- fixed broken Yahoo Finance tickers for several assets
-- added market-data and RSS caching to reduce repeated network cost
-- repaired the local XGBoost runtime and graceful fallback path
-- redesigned the Streamlit UI with tabs, sparklines, watchlist, and allocation guidance
-- added resumable scan checkpoints and live partial-results rendering during long runs
-- added a visible pipeline health-check section and resume-status card
-- added per-asset transparency reports and downloadable explanation files
-- added direct transparency-report links inside the rolling rankings table for all analysed assets
-- deployed the app to Streamlit Community Cloud: [crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
-
-## Tech Stack
-
-- `Streamlit`
-- `Plotly`
-- `pandas`
-- `numpy`
-- `yfinance`
-- `CoinPaprika API`
-- `feedparser`
-- `BeautifulSoup`
-- `VADER`
-- `TextBlob`
-- `XGBoost`
-- `scikit-learn`
-- `statsmodels`
-
-## Quick Access
-
-- Live app: [https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/](https://crypto-investor-mvp-gxv6u8tvd7btcjyr3fx26n.streamlit.app/)
-- PRD for the latest upgrade: [https://github.com/okonp07/crypto-investor-mvp/blob/main/PRD_UI_AND_RELIABILITY_UPDATE.md](https://github.com/okonp07/crypto-investor-mvp/blob/main/PRD_UI_AND_RELIABILITY_UPDATE.md)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
