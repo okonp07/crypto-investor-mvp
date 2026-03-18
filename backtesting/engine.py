@@ -2,7 +2,7 @@
 Mode-aware walk-forward backtesting engine.
 
 The backtester is intentionally transparent:
-- long-only for the first production version
+- bi-directional for the current production version
 - entries require technical + ML agreement
 - exits can happen via target, stop, time limit, or signal deterioration
 
@@ -19,6 +19,7 @@ import pandas as pd
 from analysis.ml_forecast import forecast_asset
 from analysis.technical import score_technical
 from config import ML_TRAIN_WINDOW, TRADING_MODES
+from scoring.engine import derive_trade_setup
 from strategy.entry_exit import compute_levels
 from utils.helpers import get_logger, safe_div
 
@@ -33,6 +34,7 @@ class TradeState:
     entry_time: pd.Timestamp
     entry_price: float
     entry_equity: float
+    direction: str
     stop_loss: float
     target_price: float
     signal_snapshot: dict
@@ -126,7 +128,11 @@ def run_mode_backtest(
             horizon=mode["forecast_horizon_bars"],
             return_threshold=mode["classification_threshold"],
         )
-        signal_cache[index] = {"technical": technical, "ml": ml}
+        signal_cache[index] = {
+            "technical": technical,
+            "ml": ml,
+            "setup": derive_trade_setup(technical, ml, final_score=ml.get("score", 50)),
+        }
         return signal_cache[index]
 
     cash = float(initial_cash)
@@ -146,37 +152,65 @@ def run_mode_backtest(
             high_price = float(row["High"])
             low_price = float(row["Low"])
             hold_bars = i - state.entry_index
-            equity_value = state.entry_equity * (close_price / state.entry_price)
+            if state.direction == "short":
+                equity_value = state.entry_equity * (1 + safe_div(state.entry_price - close_price, state.entry_price, 0))
+            else:
+                equity_value = state.entry_equity * (close_price / state.entry_price)
 
             exit_price = None
             exit_reason = None
-            if low_price <= state.stop_loss:
-                exit_price = state.stop_loss * (1 - slippage_rate)
-                exit_reason = "stop_loss"
-            elif high_price >= state.target_price:
-                exit_price = state.target_price * (1 - slippage_rate)
-                exit_reason = "take_profit"
-            elif hold_bars >= mode["max_holding_bars"]:
-                exit_price = close_price * (1 - slippage_rate)
-                exit_reason = "time_exit"
-            elif hold_bars >= mode["min_holding_bars"] and i % stride == 0:
-                signal_state = get_signals(i)
-                technical = signal_state["technical"]
-                ml = signal_state["ml"]
-                if (
-                    technical.get("score", 50) <= mode["exit_technical_score"]
-                    or ml.get("score", 50) <= mode["exit_ml_score"]
-                    or ml.get("direction", {}).get("direction") == "bearish"
-                ):
+            if state.direction == "short":
+                if high_price >= state.stop_loss:
+                    exit_price = state.stop_loss * (1 + slippage_rate)
+                    exit_reason = "stop_loss"
+                elif low_price <= state.target_price:
+                    exit_price = state.target_price * (1 + slippage_rate)
+                    exit_reason = "take_profit"
+                elif hold_bars >= mode["max_holding_bars"]:
+                    exit_price = close_price * (1 + slippage_rate)
+                    exit_reason = "time_exit"
+                elif hold_bars >= mode["min_holding_bars"] and i % stride == 0:
+                    signal_state = get_signals(i)
+                    setup = signal_state["setup"]
+                    if (
+                        setup.get("direction") == "long"
+                        or signal_state["ml"].get("direction", {}).get("direction") == "bullish"
+                        or setup.get("opportunity_score", 0) < 50
+                    ):
+                        exit_price = close_price * (1 + slippage_rate)
+                        exit_reason = "signal_exit"
+            else:
+                if low_price <= state.stop_loss:
+                    exit_price = state.stop_loss * (1 - slippage_rate)
+                    exit_reason = "stop_loss"
+                elif high_price >= state.target_price:
+                    exit_price = state.target_price * (1 - slippage_rate)
+                    exit_reason = "take_profit"
+                elif hold_bars >= mode["max_holding_bars"]:
                     exit_price = close_price * (1 - slippage_rate)
-                    exit_reason = "signal_exit"
+                    exit_reason = "time_exit"
+                elif hold_bars >= mode["min_holding_bars"] and i % stride == 0:
+                    signal_state = get_signals(i)
+                    setup = signal_state["setup"]
+                    if (
+                        setup.get("direction") == "short"
+                        or signal_state["ml"].get("direction", {}).get("direction") == "bearish"
+                        or setup.get("opportunity_score", 0) < 50
+                    ):
+                        exit_price = close_price * (1 - slippage_rate)
+                        exit_reason = "signal_exit"
 
             if exit_price is not None:
-                trade_return = safe_div(exit_price - state.entry_price, state.entry_price, 0) - (2 * fee_rate)
+                if state.direction == "short":
+                    gross_return = safe_div(state.entry_price - exit_price, state.entry_price, 0)
+                else:
+                    gross_return = safe_div(exit_price - state.entry_price, state.entry_price, 0)
+                trade_return = gross_return - (2 * fee_rate)
                 cash = max(state.entry_equity * (1 + trade_return), 0.0)
                 equity_value = cash
                 trade_log.append(
                     {
+                        "direction": state.direction,
                         "entry_time": state.entry_time,
                         "exit_time": timestamp,
                         "entry_price": round(state.entry_price, 6),
@@ -199,45 +233,53 @@ def run_mode_backtest(
             signal_state = get_signals(i)
             technical = signal_state["technical"]
             ml = signal_state["ml"]
-            ml_direction = ml.get("direction", {}).get("direction", "neutral")
-            ml_confidence = float(ml.get("direction", {}).get("confidence", 0))
+            setup = signal_state["setup"]
+            setup_direction = setup.get("direction", "neutral")
+            min_setup_score = (mode["minimum_ml_score"] + mode["minimum_technical_score"]) / 2
 
-            enter_long = (
-                technical.get("score", 50) >= mode["minimum_technical_score"]
-                and ml.get("score", 50) >= mode["minimum_ml_score"]
-                and ml_direction == "bullish"
-                and ml_confidence >= 50
-            )
-
-            if enter_long:
-                next_open = float(df["Open"].iloc[i + 1]) * (1 + slippage_rate)
+            if setup_direction in {"long", "short"} and setup.get("opportunity_score", 0) >= min_setup_score:
+                if setup_direction == "short":
+                    next_open = float(df["Open"].iloc[i + 1]) * (1 - slippage_rate)
+                else:
+                    next_open = float(df["Open"].iloc[i + 1]) * (1 + slippage_rate)
                 levels = compute_levels(
                     next_open,
                     technical,
                     ml,
                     risk_level=risk_level,
                     trading_mode=trading_mode,
+                    trade_setup=setup,
                 )
                 state = TradeState(
                     entry_index=i + 1,
                     entry_time=df.index[i + 1],
                     entry_price=next_open,
                     entry_equity=cash,
+                    direction=setup_direction,
                     stop_loss=float(levels["stop_loss"]),
                     target_price=float(levels["exit_price"]),
                     signal_snapshot=signal_state,
                 )
 
         if state is not None:
-            equity_value = state.entry_equity * (close_price / state.entry_price)
+            if state.direction == "short":
+                equity_value = state.entry_equity * (1 + safe_div(state.entry_price - close_price, state.entry_price, 0))
+            else:
+                equity_value = state.entry_equity * (close_price / state.entry_price)
         equity_points.append({"timestamp": timestamp, "equity": equity_value, "close": close_price})
 
     if state is not None:
-        final_close = float(df["Close"].iloc[-1]) * (1 - slippage_rate)
-        trade_return = safe_div(final_close - state.entry_price, state.entry_price, 0) - (2 * fee_rate)
+        if state.direction == "short":
+            final_close = float(df["Close"].iloc[-1]) * (1 + slippage_rate)
+            gross_return = safe_div(state.entry_price - final_close, state.entry_price, 0)
+        else:
+            final_close = float(df["Close"].iloc[-1]) * (1 - slippage_rate)
+            gross_return = safe_div(final_close - state.entry_price, state.entry_price, 0)
+        trade_return = gross_return - (2 * fee_rate)
         cash = max(state.entry_equity * (1 + trade_return), 0.0)
         trade_log.append(
             {
+                "direction": state.direction,
                 "entry_time": state.entry_time,
                 "exit_time": df.index[-1],
                 "entry_price": round(state.entry_price, 6),
@@ -350,7 +392,7 @@ def run_mode_backtest(
         "end": equity_curve["timestamp"].iloc[-1],
         "notes": (
             "Backtest uses real historical OHLCV plus the executable strategy logic: "
-            "technical signals, ML forecasts, mode-specific holding rules, risk settings, "
+            "long/short technical signals, ML forecasts, mode-specific holding rules, risk settings, "
             "and transaction-cost assumptions. Historical sentiment is excluded because "
             "reliable archival sentiment data is difficult to source consistently."
         ),

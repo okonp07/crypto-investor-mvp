@@ -29,7 +29,13 @@ from analysis.technical import score_technical, compute_indicators
 from analysis.fundamental import score_fundamental
 from analysis.sentiment import analyse_sentiment
 from analysis.ml_forecast import forecast_asset
-from scoring.engine import compute_final_score, rank_assets, generate_reasoning, determine_market_regime
+from scoring.engine import (
+    compute_final_score,
+    derive_trade_setup,
+    determine_market_regime,
+    generate_reasoning,
+    rank_assets,
+)
 from strategy.entry_exit import compute_levels
 from strategy.risk import compute_leverage
 from utils.helpers import get_logger
@@ -904,63 +910,89 @@ def build_asset_review(pick: dict, rank: int | None = None, total_assets: int | 
     fundamental = pick.get("fundamental", {})
     sentiment = pick.get("sentiment", {})
     ml = pick.get("ml_forecast", {})
+    trade_setup = pick.get("trade_setup") or derive_trade_setup(technical, ml, final_score)
+    trade_direction = trade_setup.get("direction", "neutral")
+    opportunity_score = float(trade_setup.get("opportunity_score", final_score))
 
     strengths = []
     headwinds = []
 
-    if technical.get("score", 0) >= 60:
-        strengths.append(f"technical structure is supportive at {technical.get('score', 0):.1f}/100")
-    elif technical.get("score", 0) < 45:
-        headwinds.append(f"technical structure is weak at {technical.get('score', 0):.1f}/100")
-
-    if fundamental.get("score", 0) >= 60:
-        strengths.append(f"fundamentals are relatively strong at {fundamental.get('score', 0):.1f}/100")
-    elif fundamental.get("score", 0) < 45:
-        headwinds.append(f"fundamentals are soft at {fundamental.get('score', 0):.1f}/100")
-
-    if sentiment.get("score", 0) >= 60:
-        strengths.append(f"news sentiment is constructive at {sentiment.get('score', 0):.1f}/100")
-    elif sentiment.get("score", 0) < 45:
-        headwinds.append(f"news sentiment is unsupportive at {sentiment.get('score', 0):.1f}/100")
-
+    tech_score = float(technical.get("score", 0))
+    sent_score = float(sentiment.get("score", 0))
     ml_direction = ml.get("direction", {}).get("direction", "neutral")
     ml_confidence = float(ml.get("direction", {}).get("confidence", 0))
-    if ml.get("score", 0) >= 60 and ml_direction == "bullish":
-        strengths.append(f"the ML forecast leans bullish with {ml_confidence:.0f}% confidence")
-    elif ml.get("score", 0) < 45 or ml_direction == "bearish":
-        headwinds.append(
-            f"the ML forecast is not supportive ({ml_direction}, {ml_confidence:.0f}% confidence)"
-        )
-
     trend = technical.get("trend", "neutral")
-    if trend == "bullish":
-        strengths.append("trend regime is currently bullish")
-    elif trend == "bearish":
-        headwinds.append("trend regime is currently bearish")
+
+    if trade_direction == "short":
+        if tech_score <= 40:
+            strengths.append(f"technical structure is weak at {tech_score:.1f}/100, which supports a short")
+        elif tech_score > 55:
+            headwinds.append(f"technical structure is still fairly strong at {tech_score:.1f}/100")
+
+        if fundamental.get("score", 0) < 45:
+            strengths.append(f"fundamentals are soft at {fundamental.get('score', 0):.1f}/100")
+        elif fundamental.get("score", 0) >= 60:
+            headwinds.append(f"fundamentals remain supportive at {fundamental.get('score', 0):.1f}/100")
+
+        if sent_score < 45:
+            strengths.append(f"news sentiment is negative at {sent_score:.1f}/100")
+        elif sent_score > 60:
+            headwinds.append(f"news sentiment is still constructive at {sent_score:.1f}/100")
+
+        if ml_direction == "bearish":
+            strengths.append(f"the ML forecast leans bearish with {ml_confidence:.0f}% confidence")
+        else:
+            headwinds.append(f"the ML forecast is not decisively bearish ({ml_direction}, {ml_confidence:.0f}% confidence)")
+
+        if trend == "bearish":
+            strengths.append("trend regime is currently bearish")
+        elif trend == "bullish":
+            headwinds.append("trend regime is currently bullish")
+    else:
+        if tech_score >= 60:
+            strengths.append(f"technical structure is supportive at {tech_score:.1f}/100")
+        elif tech_score < 45:
+            headwinds.append(f"technical structure is weak at {tech_score:.1f}/100")
+
+        if fundamental.get("score", 0) >= 60:
+            strengths.append(f"fundamentals are relatively strong at {fundamental.get('score', 0):.1f}/100")
+        elif fundamental.get("score", 0) < 45:
+            headwinds.append(f"fundamentals are soft at {fundamental.get('score', 0):.1f}/100")
+
+        if sent_score >= 60:
+            strengths.append(f"news sentiment is constructive at {sent_score:.1f}/100")
+        elif sent_score < 45:
+            headwinds.append(f"news sentiment is unsupportive at {sent_score:.1f}/100")
+
+        if ml_direction == "bullish":
+            strengths.append(f"the ML forecast leans bullish with {ml_confidence:.0f}% confidence")
+        elif ml_direction == "bearish":
+            headwinds.append(f"the ML forecast is bearish ({ml_direction}, {ml_confidence:.0f}% confidence)")
+
+        if trend == "bullish":
+            strengths.append("trend regime is currently bullish")
+        elif trend == "bearish":
+            headwinds.append("trend regime is currently bearish")
 
     if not strengths:
         strengths.append("there are some mixed signals, but none are strong enough to create high conviction")
     if not headwinds:
         headwinds.append("the setup has fewer visible weaknesses, but stronger alternatives ranked ahead")
 
-    if rank is not None and rank <= 3:
-        status = "Recommended"
-        verdict = f"{pick['symbol']} is currently a top-3 candidate in this run."
-    elif final_score >= 60:
+    if rank is not None and rank <= 3 and trade_direction in {"long", "short"}:
+        status = "Short Candidate" if trade_direction == "short" else "Long Candidate"
+        verdict = f"{pick['symbol']} is currently a top-3 {trade_direction} setup in this run."
+    elif opportunity_score >= 60 and trade_direction in {"long", "short"}:
         status = "Watchlist"
-        verdict = (
-            f"{pick['symbol']} has some constructive signals, but it did not make the top 3."
-        )
+        verdict = f"{pick['symbol']} has a usable {trade_direction} bias, but it did not make the top 3 setups."
     else:
-        status = "Not Recommended"
-        verdict = (
-            f"{pick['symbol']} is not currently recommended because the combined signal stack is weaker than the alternatives."
-        )
+        status = "No Trade"
+        verdict = f"{pick['symbol']} is not currently a high-conviction long or short setup."
 
     rank_text = "N/A"
     if rank is not None and total_assets is not None:
         rank_text = f"{rank}/{total_assets}"
-        if rank > 3 and status != "Recommended":
+        if rank > 3 and status not in {"Long Candidate", "Short Candidate"}:
             verdict += f" It is currently ranked {rank_text}."
 
     return {
@@ -970,12 +1002,19 @@ def build_asset_review(pick: dict, rank: int | None = None, total_assets: int | 
         "headwinds": headwinds[:4],
         "rank_text": rank_text,
         "final_score": final_score,
+        "trade_direction": trade_direction,
+        "opportunity_score": opportunity_score,
     }
 
 
 def render_asset_review_summary(review: dict):
     """Render a quick recommendation summary for the selected asset."""
-    tone_map = {"Recommended": "bullish", "Watchlist": "neutral", "Not Recommended": "bearish"}
+    tone_map = {
+        "Long Candidate": "bullish",
+        "Short Candidate": "bearish",
+        "Watchlist": "neutral",
+        "No Trade": "neutral",
+    }
     tone = tone_map.get(review["status"], "neutral")
     st.markdown(
         f"### Recommendation {tone_badge(review['status'].upper(), tone)}",
@@ -1008,8 +1047,16 @@ def generate_transparency_report(
     sentiment = pick.get("sentiment", {})
     ml = pick.get("ml_forecast", {})
     final = pick.get("final", {})
+    trade_setup = pick.get("trade_setup") or derive_trade_setup(technical, ml, final.get("final_score", 50))
     ohlcv = pick.get("ohlcv", pd.DataFrame())
-    levels = compute_levels(current_price, technical, ml, risk_level, trading_mode)
+    levels = compute_levels(
+        current_price,
+        technical,
+        ml,
+        risk_level,
+        trading_mode,
+        trade_setup=trade_setup,
+    )
     review = build_asset_review(pick, rank=rank, total_assets=total_assets)
 
     daily_vol = 0.0
@@ -1029,6 +1076,8 @@ def generate_transparency_report(
         f"- Trading mode: {trading_mode} ({TRADING_MODES[trading_mode]['holding_period_label']})",
         f"- Current price: {format_price(current_price)}",
         f"- Final score: {final.get('final_score', 0):.1f}/100",
+        f"- Trade direction: {trade_setup.get('direction', 'neutral')}",
+        f"- Opportunity score: {trade_setup.get('opportunity_score', 0):.1f}/100",
         f"- Recommendation status: {review['status']}",
         f"- Rank in universe: {review['rank_text']}",
         "",
@@ -1133,6 +1182,7 @@ def generate_transparency_report(
     lines.extend([
         "",
         "## Trade Levels And Why They Were Chosen",
+        f"- Trade side: {levels.get('trade_label', levels.get('trade_direction', 'Long Setup'))}",
         f"- Entry price: {format_price(levels['entry_price'])}",
         f"- Stop-loss: {format_price(levels['stop_loss'])}",
         f"- Take-profit / exit: {format_price(levels['exit_price'])}",
@@ -1183,7 +1233,7 @@ def render_transparency_report(
         )
 
 
-def render_pick_banner(rank_num: int, symbol: str, trend: str, final_score: float, reasoning: str):
+def render_pick_banner(rank_num: int, symbol: str, trend: str, setup_label: str, opportunity_score: float, reasoning: str):
     """Render a stylized header for each top pick."""
     summary_line = reasoning.splitlines()[0] if reasoning else ""
     st.markdown(
@@ -1196,8 +1246,8 @@ def render_pick_banner(rank_num: int, symbol: str, trend: str, final_score: floa
                     <div class="pick-subtitle">{summary_line}</div>
                 </div>
                 <div class="score-pill">
-                    <span class="summary-label">Final score</span>
-                    <strong>{final_score:.1f}</strong>
+                    <span class="summary-label">{setup_label}</span>
+                    <strong>{opportunity_score:.1f}</strong>
                 </div>
             </div>
         </div>
@@ -1210,11 +1260,12 @@ def render_signal_strip(levels: dict, leverage_info: dict, ml: dict):
     """Render compact cards for the most actionable numbers."""
     ml_direction = ml.get("direction", {}).get("direction", "neutral").capitalize()
     ml_conf = ml.get("direction", {}).get("confidence", 0)
+    trade_label = levels.get("trade_label", "Trade Setup")
     st.markdown(
         f"""
         <div class="micro-grid">
             <div class="micro-card">
-                <div class="micro-label">Entry / Exit</div>
+                <div class="micro-label">{trade_label}</div>
                 <div class="micro-value">{format_price(levels['entry_price'])}</div>
                 <div class="micro-sub">Target {format_price(levels['exit_price'])}</div>
             </div>
@@ -1322,8 +1373,15 @@ def build_asset_detail_href(symbol: str, risk_level: str, trading_mode: str) -> 
 
 
 def rankings_recommendation(review: dict) -> str:
-    """Collapse review status into a binary ranking recommendation label."""
-    return "Recommended" if review.get("status") == "Recommended" else "Not Recommended"
+    """Collapse review status into a scan-friendly trade setup label."""
+    status = review.get("status")
+    if status == "Long Candidate":
+        return "Long"
+    if status == "Short Candidate":
+        return "Short"
+    if status == "Watchlist":
+        return "Watchlist"
+    return "No Trade"
 
 
 def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str) -> str | None:
@@ -1331,7 +1389,11 @@ def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str)
     rows = []
     for cid, data in sorted(
         all_results.items(),
-        key=lambda x: x[1]["final"]["final_score"],
+        key=lambda x: (
+            1 if x[1].get("trade_setup", {}).get("direction") in {"long", "short"} else 0,
+            float(x[1].get("trade_setup", {}).get("opportunity_score", x[1]["final"]["final_score"])),
+            float(x[1]["final"]["final_score"]),
+        ),
         reverse=True,
     ):
         rank = len(rows) + 1
@@ -1340,6 +1402,7 @@ def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str)
             "Rank": rank,
             "Symbol": data["symbol"],
             "Recommendation": rankings_recommendation(review),
+            "Side": data.get("trade_setup", {}).get("direction", "neutral").capitalize(),
             "AssetHref": build_asset_detail_href(data["symbol"], risk_level, trading_mode),
             "Report": build_asset_report_href(data["symbol"], risk_level, trading_mode),
             "Price": float(data["current_price"]),
@@ -1349,6 +1412,7 @@ def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str)
             "Sentiment": float(data["sentiment"]["score"]),
             "ML": float(data["ml_forecast"]["score"]),
             "Final Score": float(data["final"]["final_score"]),
+            "Opportunity Score": float(data.get("trade_setup", {}).get("opportunity_score", data["final"]["final_score"])),
             "Narrative": sentiment_label(data["sentiment"]),
             "Sparkline": build_price_series(data.get("ohlcv", pd.DataFrame())),
         })
@@ -1402,7 +1466,12 @@ def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str)
 
     table_rows = []
     for row in rows:
-        rec_color = "#86efac" if row["Recommendation"] == "Recommended" else "#fda4af"
+        rec_color = {
+            "Long": "#86efac",
+            "Short": "#fda4af",
+            "Watchlist": "#fde68a",
+            "No Trade": "#cbd5e1",
+        }.get(row["Recommendation"], "#cbd5e1")
         table_rows.append(
             f"""
             <tr>
@@ -1411,12 +1480,14 @@ def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str)
                 <td><span style="color:{rec_color}; font-weight:700;">{html_escape(row['Recommendation'])}</span></td>
                 <td><a href="{row['Report']}" target="_self" style="color:#7dd3fc; text-decoration:none; font-weight:600;">Open report</a></td>
                 <td style="color:#e2e8f0;">{format_price(row['Price'])}</td>
+                <td style="color:#e2e8f0;">{html_escape(row['Side'])}</td>
                 <td style="color:#e2e8f0;">{html_escape(row['Trend'])}</td>
                 <td>{score_bar_html(row['Technical'])}</td>
                 <td>{score_bar_html(row['Fundamental'])}</td>
                 <td>{score_bar_html(row['Sentiment'])}</td>
                 <td>{score_bar_html(row['ML'])}</td>
                 <td>{score_bar_html(row['Final Score'])}</td>
+                <td>{score_bar_html(row['Opportunity Score'])}</td>
                 <td style="color:#e2e8f0;">{html_escape(row['Narrative'])}</td>
                 <td>{sparkline_svg(row['Sparkline'])}</td>
             </tr>
@@ -1433,12 +1504,14 @@ def render_rankings_table(all_results: dict, risk_level: str, trading_mode: str)
                         <th style="padding:0.9rem 1rem; text-align:left;">Recommendation</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Report</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Price</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Side</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Trend</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Technical</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Fundamental</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Sentiment</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">ML</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Final Score</th>
+                        <th style="padding:0.9rem 1rem; text-align:left;">Opportunity</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Sentiment Tone</th>
                         <th style="padding:0.9rem 1rem; text-align:left;">Price Action</th>
                     </tr>
@@ -1469,11 +1542,19 @@ def render_asset_detail_panel(
     symbol = pick["symbol"]
     current_price = pick["current_price"]
     final = pick["final"]
+    trade_setup = pick.get("trade_setup") or derive_trade_setup(pick.get("technical", {}), pick.get("ml_forecast", {}), final.get("final_score", 50))
     tech = pick["technical"]
     ml = pick["ml_forecast"]
     ohlcv = pick.get("ohlcv", pd.DataFrame())
     reasoning = generate_reasoning(pick)
-    levels = compute_levels(current_price, tech, ml, risk_level, trading_mode)
+    levels = compute_levels(
+        current_price,
+        tech,
+        ml,
+        risk_level,
+        trading_mode,
+        trade_setup=trade_setup,
+    )
 
     daily_vol = 0.0
     if not ohlcv.empty:
@@ -1488,7 +1569,7 @@ def render_asset_detail_panel(
         f"""
         <div class="glass-panel asset-spotlight">
             <div class="section-kicker">Selected Asset</div>
-            <h3>{symbol} {tone_badge(tech.get('trend', 'neutral').capitalize(), tech.get('trend', 'neutral'))}</h3>
+            <h3>{symbol} {tone_badge(levels.get('trade_direction', trade_setup.get('bias', 'neutral')).capitalize(), trade_setup.get('bias', 'neutral'))}</h3>
             <p>{reasoning.splitlines()[0] if reasoning else ''}</p>
         </div>
         """,
@@ -1506,11 +1587,12 @@ def render_asset_detail_panel(
 
     render_asset_review_summary(build_asset_review(pick, rank=rank, total_assets=total_assets))
     render_signal_strip(levels, leverage_info, ml)
-    a, b, c, d = st.columns(4)
+    a, b, c, d, e = st.columns(5)
     a.metric("Current Price", format_price(current_price))
-    b.metric("Entry", format_price(levels["entry_price"]))
-    c.metric("Stop", format_price(levels["stop_loss"]))
-    d.metric("Take Profit", format_price(levels["exit_price"]))
+    b.metric("Trade Side", levels.get("trade_label", levels.get("trade_direction", "Long")).replace(" Setup", ""))
+    c.metric("Entry", format_price(levels["entry_price"]))
+    d.metric("Stop", format_price(levels["stop_loss"]))
+    e.metric("Take Profit", format_price(levels["exit_price"]))
 
     with st.expander("Selected Asset Chart", expanded=True):
         if not ohlcv.empty:
@@ -1525,24 +1607,43 @@ def render_asset_detail_panel(
 
 
 def render_sidebar_portfolio(top_picks: list[dict], risk_level: str):
-    """Render a simple score-weighted allocation idea in the sidebar."""
+    """Render a direction-aware positioning idea in the sidebar."""
     if not top_picks:
         return
 
-    weights = [max(p["final"]["final_score"], 1.0) for p in top_picks]
+    setups = [
+        p.get("trade_setup")
+        or derive_trade_setup(
+            p.get("technical", {}),
+            p.get("ml_forecast", {}),
+            p.get("final", {}).get("final_score", 50),
+        )
+        for p in top_picks
+    ]
+    weights = [
+        max(
+            setup.get("opportunity_score", pick["final"]["final_score"]),
+            1.0,
+        )
+        for pick, setup in zip(top_picks, setups)
+    ]
     total = sum(weights)
     with st.sidebar:
         st.divider()
-        st.markdown("### Suggested Allocation")
-        st.caption(f"Score-weighted mix for the current `{risk_level}` profile.")
-        for pick, weight in zip(top_picks, weights):
+        st.markdown("### Suggested Positioning")
+        st.caption(
+            f"Opportunity-weighted mix for the current `{risk_level}` profile. "
+            "Long setups imply long exposure; short setups imply hedge or short exposure."
+        )
+        for pick, weight, setup in zip(top_picks, weights, setups):
             pct = weight / total * 100
+            side = setup.get("direction", "neutral").capitalize()
             st.markdown(
                 f"""
                 <div class="alloc-card">
                     <div class="alloc-head">
                         <strong>{pick['symbol']}</strong>
-                        <span>{pct:.0f}%</span>
+                        <span>{side} • {pct:.0f}%</span>
                     </div>
                     <div class="alloc-bar">
                         <div class="alloc-fill" style="width: {pct:.0f}%"></div>
@@ -2089,6 +2190,11 @@ def run_analysis(risk_level: str, trading_mode: str) -> dict:
             final_result = compute_final_score(
                 tech_result, fund_result, sent_result, ml_result, risk_level
             )
+            trade_setup = derive_trade_setup(
+                tech_result,
+                ml_result,
+                final_result.get("final_score", 50),
+            )
 
             # Store OHLCV with indicators for charting
             ohlcv_with_indicators = compute_indicators(ohlcv.copy())
@@ -2101,6 +2207,7 @@ def run_analysis(risk_level: str, trading_mode: str) -> dict:
                 "sentiment": sent_result,
                 "ml_forecast": ml_result,
                 "final": final_result,
+                "trade_setup": trade_setup,
                 "ohlcv": ohlcv_with_indicators,
                 "market_row": market_row,
             }
@@ -2191,16 +2298,28 @@ def display_results(all_results: dict, risk_level: str, trading_mode: str):
 
     with picks_tab:
         st.markdown('<div class="section-kicker">Conviction Board</div>', unsafe_allow_html=True)
-        st.header("Top 3 Investment Picks")
+        st.header("Top 3 Trade Setups")
 
         for rank_num, pick in enumerate(top_picks, 1):
             symbol = pick["symbol"]
             current_price = pick["current_price"]
             final = pick["final"]
+            trade_setup = pick.get("trade_setup") or derive_trade_setup(
+                pick.get("technical", {}),
+                pick.get("ml_forecast", {}),
+                final.get("final_score", 50),
+            )
             tech = pick["technical"]
             ml = pick["ml_forecast"]
 
-            levels = compute_levels(current_price, tech, ml, risk_level, trading_mode)
+            levels = compute_levels(
+                current_price,
+                tech,
+                ml,
+                risk_level,
+                trading_mode,
+                trade_setup=trade_setup,
+            )
 
             ohlcv = pick.get("ohlcv", pd.DataFrame())
             daily_vol = 0.0
@@ -2211,15 +2330,23 @@ def display_results(all_results: dict, risk_level: str, trading_mode: str):
 
             reasoning = generate_reasoning(pick)
             trend = tech.get("trend", "neutral")
-            render_pick_banner(rank_num, symbol, trend, final["final_score"], reasoning)
+            render_pick_banner(
+                rank_num,
+                symbol,
+                trade_setup.get("bias", trend),
+                levels.get("trade_label", "Trade Setup"),
+                trade_setup.get("opportunity_score", final["final_score"]),
+                reasoning,
+            )
             render_signal_strip(levels, leverage_info, ml)
 
-            col1, col2, col3, col4, col5 = st.columns(5)
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
             col1.metric("Current Price", format_price(current_price))
-            col2.metric("Entry Price", format_price(levels["entry_price"]))
-            col3.metric("Exit Price", format_price(levels["exit_price"]))
-            col4.metric("Stop Loss", format_price(levels["stop_loss"]))
-            col5.metric("Score", f"{final['final_score']:.1f}/100")
+            col2.metric("Trade Side", levels.get("trade_label", levels.get("trade_direction", "Long")).replace(" Setup", ""))
+            col3.metric("Entry Price", format_price(levels["entry_price"]))
+            col4.metric("Exit Price", format_price(levels["exit_price"]))
+            col5.metric("Stop Loss", format_price(levels["stop_loss"]))
+            col6.metric("Opportunity", f"{trade_setup.get('opportunity_score', final['final_score']):.1f}/100")
 
             col_a, col_b, col_c, col_d = st.columns(4)
             col_a.metric("Leverage", f"{leverage_info['leverage']}x")

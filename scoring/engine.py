@@ -10,6 +10,87 @@ from utils.helpers import get_logger
 log = get_logger(__name__)
 
 
+def derive_trade_setup(
+    technical: dict,
+    ml_forecast: dict,
+    final_score: float = 50.0,
+) -> dict:
+    """
+    Convert bullish-biased component scores into a tradeable setup direction.
+
+    Returns:
+        {
+            "direction": "long" | "short" | "neutral",
+            "bias": "bullish" | "bearish" | "mixed",
+            "opportunity_score": float,
+            "technical_edge": float,
+            "ml_edge": float,
+            "confidence": float,
+        }
+    """
+    tech_score = float(technical.get("score", 50))
+    tech_trend = technical.get("trend", "neutral")
+    ml_direction = ml_forecast.get("direction", {}).get("direction", "neutral")
+    ml_confidence = float(ml_forecast.get("direction", {}).get("confidence", 0))
+    probabilities = ml_forecast.get("direction", {}).get("probabilities", {})
+    bullish_prob = float(probabilities.get("bullish", 0.33)) * 100
+    bearish_prob = float(probabilities.get("bearish", 0.33)) * 100
+
+    long_edge = (
+        final_score * 0.45
+        + tech_score * 0.25
+        + bullish_prob * 0.20
+        + ml_confidence * 0.10
+    )
+    short_edge = (
+        (100 - final_score) * 0.45
+        + (100 - tech_score) * 0.25
+        + bearish_prob * 0.20
+        + ml_confidence * 0.10
+    )
+
+    if tech_trend == "bullish" and ml_direction == "bullish":
+        long_edge += 7
+    elif tech_trend == "bearish" and ml_direction == "bearish":
+        short_edge += 7
+    elif tech_trend == "bullish" and ml_direction == "bearish":
+        long_edge -= 4
+        short_edge -= 4
+    elif tech_trend == "bearish" and ml_direction == "bullish":
+        long_edge -= 4
+        short_edge -= 4
+
+    long_edge = float(np.clip(long_edge, 0, 100))
+    short_edge = float(np.clip(short_edge, 0, 100))
+
+    if long_edge >= short_edge + 3:
+        direction = "long"
+        bias = "bullish"
+        opportunity = long_edge
+    elif short_edge >= long_edge + 3:
+        direction = "short"
+        bias = "bearish"
+        opportunity = short_edge
+    else:
+        direction = "neutral"
+        bias = "mixed"
+        opportunity = max(long_edge, short_edge)
+
+    return {
+        "direction": direction,
+        "bias": bias,
+        "opportunity_score": round(opportunity, 2),
+        "technical_edge": round(tech_score if direction != "short" else (100 - tech_score), 2),
+        "ml_edge": round(
+            bullish_prob if direction != "short" else bearish_prob,
+            2,
+        ),
+        "confidence": round(ml_confidence, 2),
+        "long_edge": round(long_edge, 2),
+        "short_edge": round(short_edge, 2),
+    }
+
+
 def compute_final_score(
     technical: dict,
     fundamental: dict,
@@ -69,7 +150,7 @@ def compute_final_score(
 
 def rank_assets(all_results: dict, top_n: int = 3) -> list[dict]:
     """
-    Rank all analysed assets by final_score and return top N picks.
+    Rank analysed assets by actionable trade opportunity and return top N picks.
 
     Args:
         all_results: {coin_id: {"final": {...}, "technical": {...}, ...}}
@@ -78,9 +159,23 @@ def rank_assets(all_results: dict, top_n: int = 3) -> list[dict]:
     Returns:
         Sorted list of dicts, each with the full analysis for that asset.
     """
+    def sort_key(item: tuple[str, dict]) -> tuple[int, float, float]:
+        data = item[1]
+        setup = data.get("trade_setup", {})
+        direction = setup.get("direction", "neutral")
+        opportunity = float(
+            setup.get(
+                "opportunity_score",
+                data.get("final", {}).get("final_score", 0),
+            )
+        )
+        final_score = float(data.get("final", {}).get("final_score", 0))
+        actionable = 1 if direction in {"long", "short"} else 0
+        return actionable, opportunity, final_score
+
     ranked = sorted(
         all_results.items(),
-        key=lambda item: item[1]["final"]["final_score"],
+        key=sort_key,
         reverse=True,
     )
     return [{"coin_id": cid, **data} for cid, data in ranked[:top_n]]
@@ -100,7 +195,13 @@ def generate_reasoning(pick: dict) -> str:
 
     lines = []
     score = final.get("final_score", 0)
-    lines.append(f"{symbol} scored {score:.1f}/100 overall.")
+    setup = pick.get("trade_setup") or derive_trade_setup(tech, ml, score)
+    setup_direction = setup.get("direction", "neutral")
+    opportunity = setup.get("opportunity_score", score)
+    lines.append(
+        f"{symbol} scored {score:.1f}/100 overall and is currently a "
+        f"{setup_direction} setup with {opportunity:.1f}/100 opportunity strength."
+    )
 
     # Technical
     t_score = tech.get("score", 50)
@@ -139,6 +240,12 @@ def generate_reasoning(pick: dict) -> str:
         f"ML forecast ({ml_score:.0f}/100): {direction} direction "
         f"({confidence:.0f}% confidence), expected return {exp_ret:+.1f}%."
     )
+    if setup_direction == "short":
+        lines.append("  Combined signals currently favor a short-biased trade setup.")
+    elif setup_direction == "long":
+        lines.append("  Combined signals currently favor a long-biased trade setup.")
+    else:
+        lines.append("  Combined signals are mixed, so trade direction is lower conviction.")
 
     return "\n".join(lines)
 
