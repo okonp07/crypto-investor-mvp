@@ -45,6 +45,14 @@ CHECKPOINT_PATH = Path(__file__).with_name(".talentpoint_run_checkpoint.pkl")
 LATEST_RESULTS_PATH = Path(__file__).with_name(".talentpoint_latest_results.pkl")
 RISK_OPTIONS = ["conservative", "moderate", "aggressive"]
 TRADING_MODE_OPTIONS = list(TRADING_MODES.keys())
+AUTHOR_IMAGE_FILENAMES = [
+    "okon-prince.png",
+    "okon-prince.jpg",
+    "okon-prince.jpeg",
+    "author-photo.png",
+    "author-photo.jpg",
+    "author-photo.jpeg",
+]
 
 
 def load_run_checkpoint() -> dict | None:
@@ -559,6 +567,96 @@ st.markdown("""
     .status-card.fresh {
         border-color: rgba(249, 115, 22, 0.24);
         box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.05);
+    }
+
+    .about-panel {
+        padding: 1.15rem 1.2rem;
+        margin-top: 0.85rem;
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(10, 22, 39, 0.78);
+    }
+
+    .about-panel h4 {
+        margin: 0 0 0.55rem 0;
+        font-size: 1.15rem;
+    }
+
+    .about-panel p {
+        color: var(--text-soft);
+        line-height: 1.7;
+        margin: 0 0 0.85rem 0;
+    }
+
+    .about-list {
+        margin: 0.25rem 0 0.85rem 0;
+        padding-left: 1.05rem;
+        color: var(--text-soft);
+        line-height: 1.7;
+    }
+
+    .about-list li {
+        margin-bottom: 0.35rem;
+    }
+
+    .author-shell {
+        padding: 1.15rem 1.2rem;
+        margin-top: 0.85rem;
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background:
+            radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 24%),
+            radial-gradient(circle at bottom left, rgba(249, 115, 22, 0.12), transparent 22%),
+            rgba(10, 22, 39, 0.82);
+    }
+
+    .author-meta h3 {
+        margin: 0 0 0.35rem 0;
+        font-size: 1.7rem;
+    }
+
+    .author-role {
+        color: #7dd3fc;
+        font-weight: 600;
+        line-height: 1.6;
+        margin-bottom: 0.9rem;
+    }
+
+    .author-copy {
+        color: var(--text-soft);
+        line-height: 1.75;
+        margin-bottom: 0.85rem;
+    }
+
+    .author-quote {
+        margin-top: 0.95rem;
+        padding: 0.95rem 1rem;
+        border-radius: 18px;
+        background: rgba(15, 23, 42, 0.68);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        color: #f8fafc;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 1rem;
+        line-height: 1.65;
+    }
+
+    .author-avatar-fallback {
+        width: 240px;
+        height: 240px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 4.2rem;
+        font-weight: 700;
+        color: #f8fafc;
+        background:
+            radial-gradient(circle at 30% 25%, rgba(56, 189, 248, 0.42), transparent 28%),
+            linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(51, 65, 85, 0.92));
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: 0 18px 40px rgba(2, 6, 23, 0.32);
+        margin: 0 auto 1rem auto;
     }
 
     [data-testid="stProgressBar"] > div > div > div > div {
@@ -1329,6 +1427,111 @@ def render_asset_universe():
     st.markdown(f'<div class="asset-chip-wrap">{chips}</div>', unsafe_allow_html=True)
 
 
+def resolve_author_image_path() -> Path | None:
+    """Return the first available local author image path."""
+    search_roots = [Path(__file__).parent, Path(__file__).parent / "assets"]
+    for root in search_roots:
+        for filename in AUTHOR_IMAGE_FILENAMES:
+            candidate = root / filename
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def render_about_project_panel():
+    """Render a detailed explanation of the solution and how it works."""
+    st.markdown(
+        """
+        <div class="about-panel">
+            <div class="section-kicker">About This Project</div>
+            <h4>What TalentPoint is solving</h4>
+            <p>
+                TalentPoint is a crypto decision-support platform designed to help a trader or analyst
+                move from raw market noise to a structured, actionable market view. Instead of looking at
+                price charts, sentiment, and forecast signals in separate tools, the app centralizes them
+                into one workflow and converts them into a ranked set of trade opportunities.
+            </p>
+            <h4>How the solution works</h4>
+            <ul class="about-list">
+                <li><strong>1. Market data collection:</strong> the app pulls live OHLCV price history, market-cap and supply metadata, and developer-activity context for every configured asset in the universe.</li>
+                <li><strong>2. Multi-layer analysis:</strong> each asset is scored across technical structure, market fundamentals, sentiment, and machine-learning forecast quality.</li>
+                <li><strong>3. Directional trade setup generation:</strong> the scoring engine converts those signals into a tradeable setup that can be <strong>long</strong>, <strong>short</strong>, or mixed, instead of assuming every good signal is bullish.</li>
+                <li><strong>4. Trade-level construction:</strong> the strategy layer translates conviction into suggested entry, stop-loss, exit, expected return, and risk/reward levels using support/resistance, volatility logic, and forecast structure.</li>
+                <li><strong>5. Trading-mode adaptation:</strong> the same framework can be filtered through <strong>swing</strong>, <strong>day</strong>, and <strong>scalp</strong> modes, each with different horizons, holding windows, thresholds, and transaction-cost assumptions.</li>
+                <li><strong>6. Historical validation:</strong> the backtesting engine can replay the strategy on real historical price data so you can inspect return, drawdown, win rate, Sharpe, and other performance metrics before relying on the setup.</li>
+            </ul>
+            <h4>What you get from the app</h4>
+            <p>
+                The end result is a ranked market view that tells you which assets currently have the strongest
+                opportunity profile, why those assets were selected, what side of the trade the system prefers,
+                and what risk controls the system would use to express that view.
+            </p>
+            <p>
+                In practical terms, TalentPoint helps answer four questions clearly:
+                <strong>What is interesting now?</strong>,
+                <strong>why is it interesting?</strong>,
+                <strong>how would the trade be structured?</strong>,
+                and <strong>has this logic held up historically for the chosen mode?</strong>
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_about_author_panel():
+    """Render the author profile panel."""
+    author_image = resolve_author_image_path()
+    image_col, text_col = st.columns([0.9, 1.5], gap="large")
+
+    with image_col:
+        if author_image is not None:
+            st.image(str(author_image), use_container_width=True)
+        else:
+            st.markdown('<div class="author-avatar-fallback">OP</div>', unsafe_allow_html=True)
+
+    with text_col:
+        st.markdown(
+            """
+            <div class="author-shell">
+                <div class="section-kicker">About The Author</div>
+                <div class="author-meta">
+                    <h3>Okon Prince</h3>
+                    <div class="author-role">Senior Data Scientist at MIVA Open University | AI Engineer &amp; Data Scientist</div>
+                </div>
+                <div class="author-copy">
+                    I design and deploy end-to-end data systems that turn raw data into production-ready intelligence.
+                </div>
+                <div class="author-copy">
+                    My core stack includes Python, Streamlit, BigQuery, Supabase, Hugging Face, PySpark, SQL,
+                    Machine Learning, LLMs, and Transformers.
+                </div>
+                <div class="author-copy">
+                    My work spans risk scoring systems, A/B testing, AI-powered dashboards, RAG pipelines,
+                    predictive analytics, and LLM-based solutions and AI research.
+                </div>
+                <div class="author-copy">
+                    Currently, I work as a Senior Data Scientist at MIVA Open University, building intelligent systems
+                    that drive analytics, decision support, and scalable AI innovation.
+                </div>
+                <div class="author-quote">
+                    I believe: models are trained, systems are engineered, impact is delivered.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def render_about_panel():
+    """Render the project and author about sections."""
+    project_tab, author_tab = st.tabs(["About This Project", "About The Author"])
+    with project_tab:
+        render_about_project_panel()
+    with author_tab:
+        render_about_author_panel()
+
+
 def build_price_series(ohlcv: pd.DataFrame, points: int = 24) -> list[float]:
     """Return a compact close-price series for sparkline-style rendering."""
     if ohlcv.empty or "Close" not in ohlcv:
@@ -1690,6 +1893,7 @@ def ensure_ui_state():
     st.session_state.setdefault("report_focus_symbol", None)
     st.session_state.setdefault("watchlist", [])
     st.session_state.setdefault("backtests", {})
+    st.session_state.setdefault("about_panel_open", False)
 
 
 def set_selected_symbol(symbol: str | None):
@@ -2501,14 +2705,13 @@ else:
     intro_left, intro_right = st.columns([1.25, 1])
 
     with intro_left:
-        st.markdown('<div class="section-kicker">How It Works</div>', unsafe_allow_html=True)
-        st.subheader("Run the scanner and get a ranked, evidence-backed market view.")
+        st.markdown('<div class="section-kicker">Start Here</div>', unsafe_allow_html=True)
+        st.subheader("Run the scanner and get a ranked, evidence-backed crypto market view.")
         st.markdown(
             """
-            The app processes every configured asset through four lenses:
-            technical structure, fundamentals, sentiment, and ML forecasting.
-            Results are then translated into trade-style levels so you can inspect
-            both conviction and risk in one pass.
+            Choose your risk profile and trading mode in the sidebar, then run the analysis to scan the
+            configured asset universe. The app will rank the strongest opportunities, generate long or short
+            trade structures, and let you validate ideas with on-demand historical backtests.
             """
         )
         st.info("Click **Run Analysis** in the sidebar to start a fresh market scan.", icon="👈")
@@ -2535,6 +2738,15 @@ else:
             """,
             unsafe_allow_html=True,
         )
+        st.caption("Use the About panel for a full project walkthrough and author profile.")
+        if st.button(
+            "Hide About" if st.session_state.get("about_panel_open") else "About This Project",
+            key="toggle-about-panel",
+            use_container_width=True,
+        ):
+            st.session_state["about_panel_open"] = not st.session_state.get("about_panel_open", False)
+        if st.session_state.get("about_panel_open"):
+            render_about_panel()
 
     st.markdown('<div class="section-kicker">Tracked Assets</div>', unsafe_allow_html=True)
     with st.expander("Asset Universe"):
