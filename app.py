@@ -812,23 +812,22 @@ def render_app_footer():
     st.divider()
     st.markdown(
         """
-        <div style="padding:0.5rem 0 1.5rem 0; color:#9fb0c7; font-size:0.94rem; line-height:1.8;">
+        <div style="padding:0.5rem 0 1.5rem 0; color:#9fb0c7; font-size:0.94rem; line-height:1.9; text-align:center;">
             <div style="font-family:'Space Grotesk', sans-serif; font-size:1.05rem; color:#f8fafc; margin-bottom:0.35rem;">
                 License
             </div>
-            <div>This project is licensed under the MIT License - see the LICENSE file for details.</div>
-            <div>&copy; 2026</div>
-            <div>Streamlit app developed by Prince Okon.</div>
+            <div>&copy; 2026. This project is licensed under the MIT License - see the LICENSE file in the Git repository for details.</div>
+            <div>Streamlit app developed by <strong style="color:#f8fafc;">Prince Okon</strong>.</div>
             <div>
-                Based on the WorldQuant University Masters in Financial Engineering Capstone project,
+                Based on the <strong style="color:#f8fafc;">WorldQuant University</strong> Masters in Financial Engineering Capstone project,
                 <em>Machine Learning-Based Swing Trading Strategy for Cryptocurrencies</em>.
             </div>
             <div>
-                Project contributors: Prince Okon
+                Project contributors: <strong style="color:#f8fafc;">Prince Okon</strong>
                 (<a href="mailto:okonp07@gmail.com" style="color:#7dd3fc;">okonp07@gmail.com</a>),
-                Paidamoyo Mutepfa
+                <strong style="color:#f8fafc;">Paidamoyo Mutepfa</strong>
                 (<a href="mailto:paidamoyomutepfa@gmail.com" style="color:#7dd3fc;">paidamoyomutepfa@gmail.com</a>)
-                and Frackson Mkwangwala
+                and <strong style="color:#f8fafc;">Frackson Mkwangwala</strong>
                 (<a href="mailto:fracksonmakwangwala@gmail.com" style="color:#7dd3fc;">fracksonmakwangwala@gmail.com</a>)
             </div>
             <div>Phone: <a href="tel:+2349020000299" style="color:#7dd3fc;">+234(0)9020000299</a></div>
