@@ -302,13 +302,17 @@ st.markdown("""
         margin-top: 1.25rem;
     }
 
-    .hero-cta {
+    .hero-cta,
+    .hero-cta:visited,
+    .hero-cta:hover,
+    .hero-cta:active,
+    .hero-cta:focus {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         padding: 0.95rem 1.25rem;
         border-radius: 999px;
-        text-decoration: none;
+        text-decoration: none !important;
         font-weight: 700;
         letter-spacing: 0.02em;
         transition: transform 0.18s ease, filter 0.18s ease;
@@ -988,13 +992,13 @@ def render_app_footer():
             </div>
             <div>
                 Project contributors: <strong style="color:#f8fafc;">Prince Okon</strong>
-                (<a href="mailto:okonp07@gmail.com" style="color:#7dd3fc;">okonp07@gmail.com</a>),
+                (<a href="mailto:okonp07@gmail.com" style="color:#7dd3fc; text-decoration:underline;">okonp07@gmail.com</a>),
                 <strong style="color:#f8fafc;">Paidamoyo Mutepfa</strong>
-                (<a href="mailto:paidamoyomutepfa@gmail.com" style="color:#7dd3fc;">paidamoyomutepfa@gmail.com</a>)
+                (<a href="mailto:paidamoyomutepfa@gmail.com" style="color:#7dd3fc; text-decoration:underline;">paidamoyomutepfa@gmail.com</a>)
                 and <strong style="color:#f8fafc;">Frackson Mkwangwala</strong>
-                (<a href="mailto:fracksonmakwangwala@gmail.com" style="color:#7dd3fc;">fracksonmakwangwala@gmail.com</a>)
+                (<a href="mailto:fracksonmakwangwala@gmail.com" style="color:#7dd3fc; text-decoration:underline;">fracksonmakwangwala@gmail.com</a>)
             </div>
-            <div>Phone: <a href="tel:+2349020000299" style="color:#7dd3fc;">+234(0)9020000299</a></div>
+            <div>Phone: <a href="tel:+2349020000299" style="color:#7dd3fc; text-decoration:underline;">+234(0)9020000299</a></div>
         </div>
         """,
         unsafe_allow_html=True,
