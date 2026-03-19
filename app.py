@@ -145,6 +145,9 @@ if query_risk_level not in RISK_OPTIONS:
 query_trading_mode = str(st.query_params.get("mode", "swing")).lower()
 if query_trading_mode not in TRADING_MODE_OPTIONS:
     query_trading_mode = "swing"
+query_page = str(st.query_params.get("page", "home")).lower()
+if query_page not in {"home", "about"}:
+    query_page = "home"
 st.session_state.setdefault("analysis_running", False)
 button_accent = "#22c55e" if st.session_state.get("analysis_running") else "#38bdf8"
 button_accent_soft = "#16a34a" if st.session_state.get("analysis_running") else "#2563eb"
@@ -290,6 +293,42 @@ st.markdown("""
         line-height: 1.7;
         color: var(--text-soft);
         margin: 0;
+    }
+
+    .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.85rem;
+        margin-top: 1.25rem;
+    }
+
+    .hero-cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.95rem 1.25rem;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        transition: transform 0.18s ease, filter 0.18s ease;
+    }
+
+    .hero-cta:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.05);
+    }
+
+    .hero-cta.primary {
+        color: #08111f;
+        background: linear-gradient(135deg, #38bdf8 0%, #22c55e 100%);
+        box-shadow: 0 16px 34px rgba(56, 189, 248, 0.20);
+    }
+
+    .hero-cta.secondary {
+        color: #f8fafc;
+        background: rgba(15, 23, 42, 0.72);
+        border: 1px solid rgba(148, 163, 184, 0.18);
     }
 
     .glass-panel {
@@ -882,12 +921,40 @@ def tone_badge(label: str, tone: str) -> str:
     return f'<span class="tone-badge {safe_tone}">{label}</span>'
 
 
-def render_hero():
+def build_page_href(page: str, risk_level: str, trading_mode: str) -> str:
+    """Build a same-app link that preserves current mode context."""
+    return f"?page={quote(page)}&risk={quote(risk_level)}&mode={quote(trading_mode)}"
+
+
+def render_hero(current_page: str, risk_level: str, trading_mode: str):
     """Render the landing hero section."""
+    if current_page == "about":
+        eyebrow = "Project Overview"
+        copy = (
+            "Learn what TalentPoint does, how the solution works end to end, and who built it."
+        )
+        action_html = (
+            f'<div class="hero-actions">'
+            f'<a class="hero-cta primary" href="{build_page_href("home", risk_level, trading_mode)}">Back To App</a>'
+            f'</div>'
+        )
+    else:
+        eyebrow = "Crypto Intelligence Desk"
+        copy = (
+            "Track momentum, market structure, sentiment, and machine-learning forecasts in one place. "
+            "The app ranks the current universe, then translates the strongest setups into entries, "
+            "exits, leverage guidance, and supporting evidence."
+        )
+        action_html = (
+            f'<div class="hero-actions">'
+            f'<a class="hero-cta primary" href="{build_page_href("about", risk_level, trading_mode)}">About This Project</a>'
+            f'<a class="hero-cta secondary" href="#main-app">Explore The App</a>'
+            f'</div>'
+        )
     st.markdown(
-        """
+        f"""
         <section class="hero-shell">
-            <div class="hero-eyebrow">Crypto Intelligence Desk</div>
+            <div class="hero-eyebrow">{eyebrow}</div>
             <div class="brand-lockup">
                 <div class="brand-mark">TP</div>
                 <div class="brand-wordmark">
@@ -895,10 +962,9 @@ def render_hero():
                 </div>
             </div>
             <p class="hero-copy">
-                Track momentum, market structure, sentiment, and machine-learning forecasts in one place.
-                The app ranks the current universe, then translates the strongest setups into entries,
-                exits, leverage guidance, and supporting evidence.
+                {copy}
             </p>
+            {action_html}
         </section>
         """,
         unsafe_allow_html=True,
@@ -1497,7 +1563,8 @@ def render_about_author_panel():
                 <div class="section-kicker">About The Author</div>
                 <div class="author-meta">
                     <h3>Okon Prince</h3>
-                    <div class="author-role">Senior Data Scientist at MIVA Open University | AI Engineer &amp; Data Scientist</div>
+                    <div class="author-role">AI Engineer &amp; Data Scientist</div>
+                    <div class="author-role">Senior Data Scientist at MIVA Open University</div>
                 </div>
                 <div class="author-copy">
                     I design and deploy end-to-end data systems that turn raw data into production-ready intelligence.
@@ -1523,13 +1590,27 @@ def render_about_author_panel():
         )
 
 
-def render_about_panel():
-    """Render the project and author about sections."""
-    project_tab, author_tab = st.tabs(["About This Project", "About The Author"])
-    with project_tab:
-        render_about_project_panel()
-    with author_tab:
-        render_about_author_panel()
+def render_about_page(risk_level: str, trading_mode: str):
+    """Render a dedicated About page."""
+    st.markdown('<a id="main-app"></a>', unsafe_allow_html=True)
+    st.markdown('<div class="section-kicker">About Page</div>', unsafe_allow_html=True)
+    st.header("About TalentPoint")
+    st.caption(
+        "This page explains the project clearly, surfaces the author profile, and sits outside the main "
+        "analysis flow so it is easy to find from the banner."
+    )
+    render_about_project_panel()
+    st.divider()
+    render_about_author_panel()
+    if resolve_author_image_path() is None:
+        st.info(
+            "Author image file not found in the repository yet. "
+            "Add `assets/okon-prince.png` or `okon-prince.png` to display the real portrait on this page."
+        )
+    st.markdown(
+        f'<p style="margin-top:1rem;"><a class="hero-cta secondary" href="{build_page_href("home", risk_level, trading_mode)}">Return To Main App</a></p>',
+        unsafe_allow_html=True,
+    )
 
 
 def build_price_series(ohlcv: pd.DataFrame, points: int = 24) -> list[float]:
@@ -2670,91 +2751,89 @@ def display_results(all_results: dict, risk_level: str, trading_mode: str):
 ensure_ui_state()
 hydrate_selection_from_query_params()
 bootstrap_results_for_deep_link(risk_level, trading_mode)
-render_hero()
-render_resume_status_card(risk_level, trading_mode)
+render_hero(query_page, risk_level, trading_mode)
 
-if reset_run_btn:
-    clear_run_checkpoint()
-    st.session_state.pop("results", None)
-    st.session_state.pop("risk_level", None)
-    st.session_state.pop("trading_mode", None)
-    st.session_state["analysis_running"] = False
-    st.toast("Fresh run state cleared. The next scan will start from asset 1.", icon="♻️")
-
-if run_btn:
-    with st.spinner("Running full analysis pipeline..."):
-        results = run_analysis(risk_level, trading_mode)
-    st.session_state["analysis_running"] = False
-    if results:
-        st.session_state["results"] = results
-        st.session_state["risk_level"] = risk_level
-        st.session_state["trading_mode"] = trading_mode
-
-if "results" in st.session_state:
-    render_sidebar_portfolio(
-        rank_assets(st.session_state["results"], top_n=3),
-        st.session_state.get("risk_level", "moderate"),
-    )
-    render_watchlist_sidebar(st.session_state["results"])
-    display_results(
-        st.session_state["results"],
-        st.session_state.get("risk_level", "moderate"),
-        st.session_state.get("trading_mode", trading_mode),
-    )
+if query_page == "about":
+    render_about_page(risk_level, trading_mode)
+    render_app_footer()
 else:
-    intro_left, intro_right = st.columns([1.25, 1])
+    render_resume_status_card(risk_level, trading_mode)
 
-    with intro_left:
-        st.markdown('<div class="section-kicker">Start Here</div>', unsafe_allow_html=True)
-        st.subheader("Run the scanner and get a ranked, evidence-backed crypto market view.")
-        st.markdown(
-            """
-            Choose your risk profile and trading mode in the sidebar, then run the analysis to scan the
-            configured asset universe. The app will rank the strongest opportunities, generate long or short
-            trade structures, and let you validate ideas with on-demand historical backtests.
-            """
+    if reset_run_btn:
+        clear_run_checkpoint()
+        st.session_state.pop("results", None)
+        st.session_state.pop("risk_level", None)
+        st.session_state.pop("trading_mode", None)
+        st.session_state["analysis_running"] = False
+        st.toast("Fresh run state cleared. The next scan will start from asset 1.", icon="♻️")
+
+    if run_btn:
+        with st.spinner("Running full analysis pipeline..."):
+            results = run_analysis(risk_level, trading_mode)
+        st.session_state["analysis_running"] = False
+        if results:
+            st.session_state["results"] = results
+            st.session_state["risk_level"] = risk_level
+            st.session_state["trading_mode"] = trading_mode
+
+    st.markdown('<a id="main-app"></a>', unsafe_allow_html=True)
+    if "results" in st.session_state:
+        render_sidebar_portfolio(
+            rank_assets(st.session_state["results"], top_n=3),
+            st.session_state.get("risk_level", "moderate"),
         )
-        st.info("Click **Run Analysis** in the sidebar to start a fresh market scan.", icon="👈")
+        render_watchlist_sidebar(st.session_state["results"])
+        display_results(
+            st.session_state["results"],
+            st.session_state.get("risk_level", "moderate"),
+            st.session_state.get("trading_mode", trading_mode),
+        )
+    else:
+        intro_left, intro_right = st.columns([1.25, 1])
 
-        resume_state = get_resume_state(risk_level, trading_mode)
-        if resume_state:
-            st.warning(
-                f"A resumable checkpoint is available for this risk profile and trading mode. "
-                f"Use **Run / Resume Analysis** to continue from asset {resume_state['next_index'] + 1}.",
-                icon="⏯️",
+        with intro_left:
+            st.markdown('<div class="section-kicker">Start Here</div>', unsafe_allow_html=True)
+            st.subheader("Run the scanner and get a ranked, evidence-backed crypto market view.")
+            st.markdown(
+                """
+                Choose your risk profile and trading mode in the sidebar, then run the analysis to scan the
+                configured asset universe. The app will rank the strongest opportunities, generate long or short
+                trade structures, and let you validate ideas with on-demand historical backtests.
+                """
             )
+            st.info("Click **Run Analysis** in the sidebar to start a fresh market scan.", icon="👈")
 
-    with intro_right:
-        st.markdown(
-            """
-            <div class="glass-panel summary-tile">
-                <div class="summary-label">Current Universe</div>
-                <div class="summary-value">15</div>
-                <div class="summary-note">
-                    Large-cap and actively traded crypto assets with shared
-                    scoring rules and risk-profile-aware ranking.
+            resume_state = get_resume_state(risk_level, trading_mode)
+            if resume_state:
+                st.warning(
+                    f"A resumable checkpoint is available for this risk profile and trading mode. "
+                    f"Use **Run / Resume Analysis** to continue from asset {resume_state['next_index'] + 1}.",
+                    icon="⏯️",
+                )
+
+        with intro_right:
+            st.markdown(
+                """
+                <div class="glass-panel summary-tile">
+                    <div class="summary-label">Current Universe</div>
+                    <div class="summary-value">15</div>
+                    <div class="summary-note">
+                        Large-cap and actively traded crypto assets with shared
+                        scoring rules and risk-profile-aware ranking.
+                    </div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.caption("Use the About panel for a full project walkthrough and author profile.")
-        if st.button(
-            "Hide About" if st.session_state.get("about_panel_open") else "About This Project",
-            key="toggle-about-panel",
-            use_container_width=True,
-        ):
-            st.session_state["about_panel_open"] = not st.session_state.get("about_panel_open", False)
-        if st.session_state.get("about_panel_open"):
-            render_about_panel()
+                """,
+                unsafe_allow_html=True,
+            )
+            st.caption("Use the About button in the banner to open the full project walkthrough and author page.")
 
-    st.markdown('<div class="section-kicker">Tracked Assets</div>', unsafe_allow_html=True)
-    with st.expander("Asset Universe"):
-        render_asset_universe()
+        st.markdown('<div class="section-kicker">Tracked Assets</div>', unsafe_allow_html=True)
+        with st.expander("Asset Universe"):
+            render_asset_universe()
 
-    st.divider()
-    st.markdown('<div class="section-kicker">Historical Backtests</div>', unsafe_allow_html=True)
-    st.subheader("Run an on-demand backtest without scanning the full universe.")
-    render_backtest_tab(risk_level, trading_mode, st.session_state.get("selected_symbol"))
+        st.divider()
+        st.markdown('<div class="section-kicker">Historical Backtests</div>', unsafe_allow_html=True)
+        st.subheader("Run an on-demand backtest without scanning the full universe.")
+        render_backtest_tab(risk_level, trading_mode, st.session_state.get("selected_symbol"))
 
-render_app_footer()
+    render_app_footer()
